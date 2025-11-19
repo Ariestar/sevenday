@@ -21,8 +21,10 @@ urlpatterns = [
     # 根路径重定向到 admin 后台，避免在开发时访问 / 时出现 404
     path("", RedirectView.as_view(url="/admin/")),
     path("oauth/", include("oauth.urls")),  # 登录
+    path("auth/", include("oauth.urls")),  # 邮箱验证码登录（前端使用）
     path("academies/", include("academies.urls")),  # 院系
     path("applications/", include("applications.urls")),  # 报名表
+    path("signup/", include("applications.urls")),  # 报名表（前端使用别名）
     path("posts/", include("posts.urls")),  # 打卡表
     path("tasks/", include("tasks.urls")),  # 打卡任务
     path("teams/", include("teams.urls")),  # 队伍

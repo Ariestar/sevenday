@@ -13,7 +13,7 @@ from server.utils.pagination import StandardResultsSetPagination
 from .match import match, DAILY_ATTEMPT_LIMIT
 from .models import MatchAttempt
 from .models import Application
-from .serializers import ApplicationSerializer
+from .serializers import ApplicationSerializer, SignupSerializer
 
 
 class ApplicationViewSet(viewsets.ModelViewSet):
@@ -37,30 +37,157 @@ class ApplicationViewSet(viewsets.ModelViewSet):
 
     def create(self, request, *args, **kwargs):
         """创建报名表"""
-        # 检查用户是否已有报名表
-        if Application.objects.filter(user=request.user).exists():
+        import logging
+        from rest_framework.exceptions import ValidationError
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # 检查用户是否已有报名表
+            if Application.objects.filter(user=request.user).exists():
+                raise ApiException(
+                    ResponseType.ParamValidationFailed,
+                    msg="您已提交过报名表，请勿重复提交",
+                )
+            
+            logger.info(f"用户 {request.user.id} 提交报名数据: {request.data}")
+            
+            # 使用前端适配序列化器
+            serializer = SignupSerializer(data=request.data, context={'request': request})
+            
+            # 验证数据，如果失败则提取友好的错误信息
+            if not serializer.is_valid():
+                # 提取字段级别的错误信息
+                errors = serializer.errors
+                error_messages = []
+                
+                # 遍历所有字段错误
+                for field, field_errors in errors.items():
+                    if isinstance(field_errors, list):
+                        for error in field_errors:
+                            # 提取错误消息
+                            if hasattr(error, 'code'):
+                                error_msg = str(error)
+                            else:
+                                error_msg = str(error)
+                            error_messages.append(f"{self._get_field_label(field)}: {error_msg}")
+                    else:
+                        error_messages.append(f"{self._get_field_label(field)}: {str(field_errors)}")
+                
+                # 如果没有提取到具体错误，使用默认消息
+                if not error_messages:
+                    error_messages = [str(errors)]
+                
+                # 返回友好的错误信息
+                raise ApiException(
+                    ResponseType.ParamValidationFailed,
+                    msg=error_messages[0] if len(error_messages) == 1 else "数据验证失败",
+                    detail="; ".join(error_messages) if len(error_messages) > 1 else error_messages[0],
+                    record=True,
+                )
+            
+            application = serializer.save()
+            
+            logger.info(f"报名表创建成功: {application.id}")
+            
+            # 返回标准格式的序列化数据
+            result_serializer = ApplicationSerializer(application, context={'request': request})
+            headers = self.get_success_headers(result_serializer.data)
+            return Response(result_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+            
+        except ApiException:
+            raise
+        except ValidationError as e:
+            # DRF 的 ValidationError，提取错误信息
+            error_messages = []
+            if hasattr(e, 'detail'):
+                if isinstance(e.detail, dict):
+                    for field, field_errors in e.detail.items():
+                        if isinstance(field_errors, list):
+                            for error in field_errors:
+                                error_messages.append(f"{self._get_field_label(field)}: {str(error)}")
+                        else:
+                            error_messages.append(f"{self._get_field_label(field)}: {str(field_errors)}")
+                else:
+                    error_messages.append(str(e.detail))
+            else:
+                error_messages.append(str(e))
+            
             raise ApiException(
                 ResponseType.ParamValidationFailed,
-                msg="您已提交过报名表，请勿重复提交",
+                msg=error_messages[0] if error_messages else "数据验证失败",
+                detail="; ".join(error_messages) if len(error_messages) > 1 else (error_messages[0] if error_messages else str(e)),
+                record=True,
             )
-        
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        headers = self.get_success_headers(serializer.data)
-        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"创建报名表失败: {e}", exc_info=True)
+            import traceback
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
+            raise ApiException(
+                ResponseType.ServerError,
+                msg="提交报名失败",
+                detail=str(e),
+                record=True,
+            )
+    
+    def _get_field_label(self, field_name):
+        """获取字段的中文标签"""
+        field_labels = {
+            'name': '姓名',
+            'gender': '性别',
+            'degree': '学历',
+            'studentNo': '学号',
+            'majorCategory': '专业大类',
+            'college': '院系',
+            'qq': 'QQ号',
+            'bio': '个人简介',
+            'avatar': '头像',
+            'signupType': '报名类型',
+        }
+        return field_labels.get(field_name, field_name)
 
     @action(methods=["get"], detail=False, url_path="my-application")
     def my_application(self, request):
         """获取我的报名表"""
-        application = Application.objects.filter(user=request.user).first()
-        if not application:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            logger.info(f"用户 {request.user.id} 请求报名表详情")
+            
+            # 优化查询：预加载 user 和关联数据
+            application = Application.objects.select_related('user', 'my_academy').prefetch_related('academy_choice').filter(user=request.user).first()
+            
+            if not application:
+                logger.info(f"用户 {request.user.id} 还没有报名表")
+                raise ApiException(
+                    ResponseType.ResourceNotFound,
+                    msg="您还没有提交报名表",
+                )
+            
+            logger.info(f"找到报名表 {application.id}，开始序列化")
+            serializer = self.get_serializer(application, context={'request': request})
+            logger.info(f"序列化成功，返回数据")
+            return Response(serializer.data)
+            
+        except ApiException:
+            raise
+        except Exception as e:
+            logger.error(f"获取报名表详情失败: {e}", exc_info=True)
+            import traceback
+            logger.error(f"错误堆栈: {traceback.format_exc()}")
             raise ApiException(
-                ResponseType.ResourceNotFound,
-                msg="您还没有提交报名表",
+                ResponseType.ServerError,
+                msg="获取报名表详情失败",
+                detail=str(e),
+                record=True,
             )
-        serializer = self.get_serializer(application)
-        return Response(serializer.data)
+    
+    @action(methods=["get"], detail=False, url_path="detail")
+    def signup_detail(self, request):
+        """获取我的报名表详情（前端使用）"""
+        return self.my_application(request)
 
     @action(methods=["get"], detail=False, url_path="match-status")
     def match_status(self, request):
@@ -174,7 +301,7 @@ class ApplicationViewSet(viewsets.ModelViewSet):
             "limit": DAILY_ATTEMPT_LIMIT,
         })
 
-    @action(methods=["get"], detail=False, url_path="statistics", permission_classes=[IsAuthenticated])
+    @action(methods=["get"], detail=False, url_path="statistics")
     def statistics(self, request):
         """报名统计信息（管理员可查看全部，用户只能看自己的）"""
         if request.user.is_staff:

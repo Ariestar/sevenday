@@ -9,6 +9,7 @@ from server.settings.components.caches import *
 from server.settings.components.common import *
 from server.settings.components.databases import *
 from server.settings.components.drf import *
+from server.settings.components.email import *
 from server.settings.components.simpleui import *
 from server.settings.components.storage import *
 from server.settings.components.zq_auth import *

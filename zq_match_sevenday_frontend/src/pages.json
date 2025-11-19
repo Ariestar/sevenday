@@ -1,0 +1,141 @@
+{
+  "pages": [
+    {
+      "path": "pages/signup/index",
+      "style": {
+        "navigationBarTitleText": "报名信息",
+        "navigationBarBackgroundColor": "#ffffff"
+      }
+    },
+    {
+      "path": "pages/single-match/index",
+      "style": {
+        "navigationBarTitleText": "单人匹配",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/single-match-result/index",
+      "style": {
+        "navigationBarTitleText": "匹配结果",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/single-match-confirm/index",
+      "style": {
+        "navigationBarTitleText": "确认组队",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/multiple-match/index",
+      "style": {
+        "navigationBarTitleText": "多人匹配",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/multiple-match-confirm/index",
+      "style": {
+        "navigationBarTitleText": "组队确认",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/teammate-info/index",
+      "style": {
+        "navigationBarTitleText": "队友信息",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/checkin-detail/index",
+      "style": {
+        "navigationBarTitleText": "组队打卡",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/checkin-submit/index",
+      "style": {
+        "navigationBarTitleText": "组队打卡提交",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/square-detail/index",
+      "style": {
+        "navigationBarTitleText": "打卡详情",
+        "navigationStyle": "custom"
+      }
+    },
+		{
+      "path": "pages/square/index",
+      "style": {
+        "navigationBarTitleText": "广场",
+        "enablePullDownRefresh": true
+      }
+    },
+    {
+      "path": "pages/mine/index",
+			"style": {
+        "navigationBarTitleText": "我的"
+			}
+		},
+    {
+      "path": "pages/personal-info/index",
+      "style": {
+        "navigationBarTitleText": "个人信息",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/about/index",
+      "style": {
+        "navigationBarTitleText": "关于我们",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/guide/index",
+      "style": {
+        "navigationBarTitleText": "使用导引",
+        "navigationStyle": "custom"
+      }
+    }
+	],
+  "tabBar": {
+    "custom": true,
+    "color": "#999999",
+    "selectedColor": "#667eea",
+    "backgroundColor": "#ffffff",
+    "borderStyle": "black",
+    "list": [
+      {
+        "pagePath": "pages/multiple-match/index",
+        "text": "匹配"
+      },
+      {
+        "pagePath": "pages/checkin-detail/index",
+        "text": "打卡"
+      },
+      {
+        "pagePath": "pages/square/index",
+        "text": "广场"
+      },
+      {
+        "pagePath": "pages/mine/index",
+        "text": "我的"
+      }
+    ]
+  },
+	"globalStyle": {
+		"navigationBarTextStyle": "black",
+    "navigationBarTitleText": "专交遇见你",
+    "navigationBarBackgroundColor": "#ffffff",
+    "backgroundColor": "#f5f5f5",
+    "backgroundTextStyle": "light"
+  },
+  "uniIdRouter": {}
+}

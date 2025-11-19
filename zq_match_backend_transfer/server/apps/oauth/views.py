@@ -1,14 +1,21 @@
+from django.conf import settings
+from django.core.mail import send_mail
+from django.template.loader import render_to_string
 from rest_framework import status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.views import TokenObtainPairView
 from users.models import User
+from users.serializers import UserSerializer
 from zq_django_util.exceptions import ApiException
 from zq_django_util.response import ResponseType
 
 from .serializers import (
     EmailLoginSerializer,
+    EmailVerifyCodeSerializer,
+    EmailVerifySerializer,
     OpenIdLoginSerializer,
     PhoneLoginSerializer,
     QQBindSerializer,
@@ -293,4 +300,220 @@ class RegisterView(APIView):
             'email': user.email,
             'is_authenticated': user.is_authenticated,
         }, status=status.HTTP_201_CREATED)
+
+
+class EmailVerifyCodeView(APIView):
+    """
+    发送邮箱验证码视图
+    """
+    
+    def post(self, request):
+        """
+        发送邮箱验证码
+        """
+        serializer = EmailVerifyCodeSerializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception as e:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="邮箱格式不正确",
+                detail=str(e),
+                record=True,
+            )
+        
+        email = serializer.validated_data['email']
+        
+        # 生成6位随机验证码
+        import random
+        verify_code = str(random.randint(100000, 999999))
+        
+        # 将验证码存储到缓存中，有效期5分钟
+        from django.core.cache import cache
+        cache_key = f'email_verify_code_{email}'
+        cache.set(cache_key, verify_code, 300)  # 5分钟过期
+        
+        # 发送邮件
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 检查是否配置了邮件服务器
+        email_configured = bool(getattr(settings, 'EMAIL_HOST_USER', None))
+        
+        if email_configured:
+            # 配置了邮件服务器，发送真实邮件
+            try:
+                # 渲染邮件模板
+                html_message = render_to_string(
+                    'email/verify_code.html',
+                    {
+                        'email': email,
+                        'verify_code': verify_code
+                    }
+                )
+                text_message = render_to_string(
+                    'email/verify_code.txt',
+                    {
+                        'email': email,
+                        'verify_code': verify_code
+                    }
+                )
+                
+                # 发送邮件
+                send_mail(
+                    subject='专交遇见你 - 邮箱验证码',
+                    message=text_message,
+                    from_email=getattr(settings, 'DEFAULT_FROM_EMAIL', None),
+                    recipient_list=[email],
+                    html_message=html_message,
+                    fail_silently=False,
+                )
+                
+                logger.info(f"验证码邮件已发送到: {email}")
+                
+                # 开发环境：同时在控制台输出验证码（便于调试）
+                if getattr(settings, 'DEBUG', False):
+                    print(f"\n{'='*60}")
+                    print(f"✅ 验证码邮件已发送到: {email}")
+                    print(f"📧 验证码: {verify_code}")
+                    print(f"{'='*60}\n")
+                
+                return Response({
+                    'msg': '验证码已发送到您的邮箱，请查收',
+                    # 开发环境返回验证码，生产环境应移除
+                    'code': verify_code if getattr(settings, 'DEBUG', False) else None
+                }, status=status.HTTP_200_OK)
+                
+            except Exception as e:
+                logger.error(f"发送验证码邮件失败: {e}")
+                
+                # 开发环境：邮件发送失败时在控制台输出验证码
+                if getattr(settings, 'DEBUG', False):
+                    print(f"\n{'='*60}")
+                    print(f"⚠️  邮件发送失败，验证码 [{email}]: {verify_code}")
+                    print(f"错误: {e}")
+                    print(f"{'='*60}\n")
+                    
+                    return Response({
+                        'msg': '验证码已发送（邮件发送失败，请查看控制台）',
+                        'code': verify_code
+                    }, status=status.HTTP_200_OK)
+                else:
+                    # 生产环境：邮件发送失败时抛出异常
+                    raise ApiException(
+                        ResponseType.ServerError,
+                        msg="验证码发送失败，请稍后重试",
+                        detail=str(e),
+                        record=True,
+                    )
+        else:
+            # 未配置邮件服务器，使用控制台输出（开发环境）
+            logger.info(f"邮箱验证码 [{email}]: {verify_code}")
+            print(f"\n{'='*60}")
+            print(f"📧 邮箱验证码 [{email}]: {verify_code}")
+            print(f"💡 提示: 未配置邮件服务器，验证码仅在控制台输出")
+            print(f"{'='*60}\n")
+            
+            return Response({
+                'msg': '验证码已发送（开发环境，请查看控制台）',
+                # 开发环境返回验证码
+                'code': verify_code
+            }, status=status.HTTP_200_OK)
+
+
+class EmailVerifyView(APIView):
+    """
+    邮箱验证码验证登录视图
+    """
+    
+    def post(self, request):
+        """
+        验证邮箱验证码并登录
+        """
+        # 调试日志：打印接收到的数据
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"收到验证请求: {request.data}")
+        print(f"\n收到验证请求:")
+        print(f"  email: {request.data.get('email')}")
+        print(f"  code: {request.data.get('code')}")
+        print(f"  code type: {type(request.data.get('code'))}")
+        print(f"  code length: {len(str(request.data.get('code', ''))) if request.data.get('code') else 0}")
+        
+        serializer = EmailVerifySerializer(data=request.data)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception as e:
+            logger.error(f"验证失败: {e}")
+            print(f"验证失败: {e}")
+            raise ApiException(
+                ResponseType.ThirdLoginFailed,
+                msg="邮箱验证失败",
+                detail=str(e),
+                record=True,
+            )
+        
+        # 获取或创建用户
+        user = serializer.create(serializer.validated_data)
+        
+        # 生成JWT token
+        refresh = RefreshToken.for_user(user)
+        access = refresh.access_token
+        
+        # 返回token和用户信息
+        return Response({
+            'token': str(access),
+            'refresh': str(refresh),
+            'userInfo': {
+                'id': user.id,
+                'username': user.username,
+                'email': user.email,
+                'is_authenticated': user.is_authenticated,
+                'is_staff': user.is_staff,
+            }
+        }, status=status.HTTP_200_OK)
+
+
+class UserInfoView(APIView):
+    """
+    获取当前用户信息视图
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        """
+        获取当前用户信息
+        """
+        user = request.user
+        serializer = UserSerializer(user)
+        return Response(serializer.data)
+
+
+class UpdateUserInfoView(APIView):
+    """
+    更新用户信息视图
+    """
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        """
+        更新用户信息
+        """
+        user = request.user
+        serializer = UserSerializer(user, data=request.data, partial=True)
+        
+        try:
+            serializer.is_valid(raise_exception=True)
+        except Exception as e:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="更新用户信息失败",
+                detail=str(e),
+                record=True,
+            )
+        
+        serializer.save()
+        return Response(serializer.data)
 

@@ -1,0 +1,67 @@
+/* TabBar 图标字体 - 使用 Unicode 符号 */
+
+.iconfont {
+  font-family: 'iconfont' !important;
+  font-size: 44rpx;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 匹配图标 - 使用爱心符号 */
+.icon-match:before {
+  content: "♥";
+}
+
+/* 打卡图标 - 使用勾选符号 */
+.icon-checkin:before {
+  content: "✓";
+}
+
+/* 广场图标 - 使用星星符号 */
+.icon-square:before {
+  content: "★";
+}
+
+/* 我的图标 - 使用人物符号 */
+.icon-mine:before {
+  content: "👤";
+}
+
+/* 备用方案：使用更专业的图标字体类名 */
+.tab-icon {
+  display: inline-block;
+  font-size: 44rpx;
+  line-height: 1;
+}
+
+/* 使用 CSS 绘制简单图标 */
+.icon-match-shape {
+  width: 44rpx;
+  height: 44rpx;
+  position: relative;
+  display: inline-block;
+}
+
+.icon-match-shape::before,
+.icon-match-shape::after {
+  content: '';
+  position: absolute;
+  width: 22rpx;
+  height: 30rpx;
+  background-color: currentColor;
+  border-radius: 22rpx 22rpx 0 0;
+}
+
+.icon-match-shape::before {
+  left: 0;
+  transform: rotate(-45deg);
+  transform-origin: 0 100%;
+}
+
+.icon-match-shape::after {
+  right: 0;
+  transform: rotate(45deg);
+  transform-origin: 100% 100%;
+}
+

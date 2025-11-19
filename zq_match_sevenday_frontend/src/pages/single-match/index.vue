@@ -1,0 +1,749 @@
+<template>
+  <view class="single-match-page">
+    <!-- 渐变背景容器 -->
+    <view class="gradient-container">
+      <!-- 顶部背景图片 -->
+      <view class="gradient-bg"></view>
+      
+      <!-- 标签切换区域 -->
+      <view class="tab-section">
+        <view class="tab-group">
+          <view class="tab-item" @click="goToSignup">
+            <text class="tab-text">报名</text>
+          </view>
+          <view class="tab-item active">
+            <text class="tab-text active">匹配</text>
+            <view class="tab-indicator"></view>
+          </view>
+        </view>
+      </view>
+
+      <!-- 你的期望标题 -->
+      <view class="expectation-header">
+        <text class="expectation-title">你的期望</text>
+        
+        <!-- 右侧按钮组 -->
+        <view class="action-buttons">
+          <button class="action-btn smart-match" @click="handleIntelligentMatch">
+            智能匹配
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <!-- 主要内容区域 -->
+    <view class="content-section">
+      <!-- 性别选择 -->
+      <view class="form-group">
+        <view class="form-label-row">
+          <view class="form-icon">
+            <image src="/static/match-single-part1/star.png" class="icon-star" mode="aspectFit" />
+          </view>
+          <text class="form-label">你希望匹配对象的性别</text>
+        </view>
+        <view class="form-input-container">
+          <picker 
+            :value="selectedGenderIndex" 
+            :range="genderOptions" 
+            range-key="label"
+            @change="onGenderChange"
+            class="form-picker"
+          >
+            <view class="picker-content">
+              <text class="picker-text">{{ expectation.gender ? getGenderLabel(expectation.gender) : '请选择' }}</text>
+            </view>
+          </picker>
+        </view>
+      </view>
+
+      <!-- 大类选择 -->
+      <view class="form-group">
+        <view class="form-label-row">
+          <view class="form-icon">
+            <image src="/static/match-single-part1/star.png" class="icon-star" mode="aspectFit" />
+          </view>
+          <text class="form-label">你希望匹配对象的大类</text>
+        </view>
+        <view class="form-input-container">
+          <picker 
+            :value="selectedMajorIndex" 
+            :range="majorOptions" 
+            range-key="label"
+            @change="onMajorChange"
+            class="form-picker"
+          >
+            <view class="picker-content">
+              <text class="picker-text">{{ expectation.majorCategory ? getMajorLabel(expectation.majorCategory) : '请选择' }}</text>
+            </view>
+          </picker>
+        </view>
+      </view>
+
+      <!-- 学院输入 -->
+      <view class="form-group">
+        <view class="form-label-row">
+          <view class="form-icon">
+            <image src="/static/match-single-part1/star.png" class="icon-star" mode="aspectFit" />
+          </view>
+          <text class="form-label">你希望匹配对象的学院</text>
+        </view>
+        <view class="form-input-container">
+          <input
+            v-model="expectation.college"
+            placeholder="请输入"
+            class="form-input"
+            maxlength="50"
+          />
+        </view>
+      </view>
+    </view>
+
+    <!-- 底部按钮区域 -->
+    <view class="bottom-buttons">
+      <!-- 开始匹配按钮 -->
+      <button class="start-match-btn" @click="handleStartMatch" :disabled="!isFormValid">
+        <image src="/static/match-single-part1/start-match-star.png" class="btn-icon left" mode="aspectFit" />
+        <text class="btn-text">开始匹配</text>
+        <image src="/static/match-single-part1/start-match-star.png" class="btn-icon right" mode="aspectFit" />
+      </button>
+      
+      <!-- 保存按钮 -->
+      <button class="save-btn" @click="handleSave" :disabled="saving">
+        <text class="btn-text">{{ saving ? '保存中...' : '保存' }}</text>
+      </button>
+    </view>
+
+    <!-- 成功弹窗 -->
+    <SuccessModal
+      :visible="showSuccessModal"
+      @update:visible="showSuccessModal = $event"
+      @close="handleSuccessClose"
+      :type="successType"
+      :title="successTitle"
+    />
+
+    <!-- 底部导航栏 -->
+    <view class="bottom-navigation">
+      <!-- 报名-匹配 (选中状态) -->
+      <view class="nav-item active" @click="goToMultipleMatch">
+        <view class="nav-icon-wrapper">
+          <image src="/static/navigation/match-on.png" class="nav-icon" mode="aspectFit" />
+        </view>
+        <text class="nav-text active">报名-匹配</text>
+      </view>
+      
+      <!-- 打卡 -->
+      <view class="nav-item" @click="goToCheckin">
+        <view class="nav-icon-wrapper">
+          <image src="/static/navigation/checkin-off.png" class="nav-icon" mode="aspectFit" />
+        </view>
+        <text class="nav-text">打卡</text>
+      </view>
+      
+      <!-- 广场 -->
+      <view class="nav-item" @click="goToSquare">
+        <view class="nav-icon-wrapper">
+          <image src="/static/navigation/square-off.png" class="nav-icon" mode="aspectFit" />
+        </view>
+        <text class="nav-text">广场</text>
+      </view>
+      
+      <!-- 我的 -->
+      <view class="nav-item" @click="goToMine">
+        <view class="nav-icon-wrapper">
+          <image src="/static/navigation/mine-off.png" class="nav-icon" mode="aspectFit" />
+        </view>
+        <text class="nav-text">我的</text>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script>
+import { GENDER_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
+import { saveMatchExpectation } from '../../services/match'
+import SuccessModal from '../../components/SuccessModal.vue'
+
+export default {
+  components: {
+    SuccessModal
+  },
+  data() {
+    return {
+      expectation: {
+        gender: '',
+        majorCategory: '',
+        college: ''
+      },
+      genderOptions: GENDER_OPTIONS,
+      majorOptions: MAJOR_CATEGORY_OPTIONS,
+      showSuccessModal: false,
+      successType: 'save',
+      successTitle: '保存成功！',
+      saving: false
+    }
+  },
+  computed: {
+    selectedGenderIndex() {
+      return this.genderOptions.findIndex(item => item.value === this.expectation.gender)
+    },
+    selectedMajorIndex() {
+      return this.majorOptions.findIndex(item => item.value === this.expectation.majorCategory)
+    },
+    isFormValid() {
+      return this.expectation.gender && this.expectation.majorCategory
+    }
+  },
+  onLoad(options) {
+    console.log('单人匹配页面加载', options)
+    // 如果是从报名页面跳转过来，可能会有参数
+    if (options.from === 'signup') {
+      console.log('从报名页面跳转过来')
+    }
+  },
+  methods: {
+    onGenderChange(e) {
+      const index = e.detail.value
+      this.expectation.gender = this.genderOptions[index]?.value || ''
+    },
+    onMajorChange(e) {
+      const index = e.detail.value
+      this.expectation.majorCategory = this.majorOptions[index]?.value || ''
+    },
+    getGenderLabel(value) {
+      const option = this.genderOptions.find(item => item.value === value)
+      return option ? option.label : ''
+    },
+    getMajorLabel(value) {
+      const option = this.majorOptions.find(item => item.value === value)
+      return option ? option.label : ''
+    },
+    async handleStartMatch() {
+      if (!this.isFormValid) {
+        uni.showToast({
+          title: '请完善匹配条件',
+          icon: 'none'
+        })
+        return
+      }
+
+      try {
+        uni.showLoading({ title: '开始匹配...' })
+        
+        // TODO: 调用开始匹配API
+        console.log('开始匹配:', this.expectation)
+        
+        // 模拟API调用
+        await new Promise(resolve => setTimeout(resolve, 1500))
+        
+        uni.hideLoading()
+        
+        // 模拟匹配结果数据
+        const matchResult = {
+          name: '张同学',
+          gender: '女',
+          education: '本科生',
+          majorCategory: '工科',
+          college: '计算机学院',
+          avatar: '' // 可以设置头像URL
+        }
+        
+        // 跳转到匹配结果页面，传递匹配数据
+        uni.navigateTo({
+          url: `/pages/single-match-result/index?matchData=${encodeURIComponent(JSON.stringify(matchResult))}`,
+          success: () => {
+            console.log('跳转到匹配结果页面成功')
+            uni.showToast({
+              title: '匹配成功！',
+              icon: 'success'
+            })
+          },
+          fail: (err) => {
+            console.error('跳转到匹配结果页面失败:', err)
+            uni.showToast({
+              title: '跳转失败，请重试',
+              icon: 'none'
+            })
+          }
+        })
+        
+      } catch (error) {
+        uni.hideLoading()
+        console.error('匹配失败:', error)
+        
+        uni.showToast({
+          title: error.message || '匹配失败，请重试',
+          icon: 'none'
+        })
+      }
+    },
+    async handleSave() {
+      this.saving = true
+      
+      try {
+        uni.showLoading({ title: '保存中...' })
+        
+        const result = await saveMatchExpectation(this.expectation)
+        console.log('保存成功:', result)
+        
+        uni.hideLoading()
+        
+        this.successType = 'save'
+        this.successTitle = '保存成功！'
+        this.showSuccessModal = true
+        
+      } catch (error) {
+        uni.hideLoading()
+        console.error('保存失败:', error)
+        
+        // 开发阶段：如果是无效URL错误，模拟成功
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，模拟保存成功')
+          this.successType = 'save'
+          this.successTitle = '保存成功！'
+          this.showSuccessModal = true
+        } else {
+          uni.showToast({
+            title: error.message || '保存失败，请重试',
+            icon: 'none'
+          })
+        }
+      } finally {
+        this.saving = false
+      }
+    },
+    handleIntelligentMatch() {
+      // 检查是否填写了期望信息
+      if (!this.expectation.gender || !this.expectation.majorCategory) {
+        uni.showToast({
+          title: '请先填写期望信息',
+          icon: 'none'
+        })
+        return
+      }
+      
+      // 保存期望信息到本地存储
+      uni.setStorageSync('singleMatchExpectation', this.expectation)
+      
+      // 跳转到智能匹配页面
+      uni.navigateTo({
+        url: '/pages/single-match-result/index',
+        success: () => {
+          console.log('跳转到智能匹配页面成功')
+        },
+        fail: (err) => {
+          console.error('跳转失败:', err)
+          uni.showToast({
+            title: '跳转失败，请重试',
+            icon: 'none'
+          })
+        }
+      })
+    },
+    handleSuccessClose() {
+      this.showSuccessModal = false
+    },
+    goToSignup() {
+      // 优化跳转逻辑，适配游客模式
+      console.log('返回报名页面')
+      uni.navigateBack({
+        success: () => {
+          console.log('返回成功')
+        },
+        fail: (err) => {
+          console.warn('返回失败，尝试其他方式:', err)
+          // 如果无法返回，尝试重定向
+          uni.reLaunch({
+            url: '/pages/signup/index',
+            success: () => {
+              console.log('重定向到报名页面成功')
+            },
+            fail: (err2) => {
+              console.error('跳转报名页面失败:', err2)
+              uni.showToast({
+                title: '请手动切换到报名页面',
+                icon: 'none',
+                duration: 2000
+              })
+            }
+          })
+        }
+      })
+    },
+    goToMultipleMatch() {
+      // 跳转到报名页面，而不是多人匹配页面（多人匹配未开放）
+      uni.reLaunch({
+        url: '/pages/signup/index',
+        fail: (err) => {
+          console.warn('跳转失败:', err)
+          uni.navigateTo({
+            url: '/pages/signup/index',
+            fail: () => {
+              uni.showToast({
+                title: '跳转失败，请重试',
+                icon: 'none'
+              })
+            }
+          })
+        }
+      })
+    },
+    goToCheckin() {
+      uni.switchTab({
+        url: '/pages/checkin-detail/index',
+        fail: (err) => {
+          console.warn('跳转失败:', err)
+          uni.reLaunch({ url: '/pages/checkin-detail/index' })
+        }
+      })
+    },
+    goToSquare() {
+      uni.switchTab({
+        url: '/pages/square/index',
+        fail: (err) => {
+          console.warn('跳转失败:', err)
+          uni.reLaunch({ url: '/pages/square/index' })
+        }
+      })
+    },
+    goToMine() {
+      uni.switchTab({
+        url: '/pages/mine/index',
+        fail: (err) => {
+          console.warn('跳转失败:', err)
+          uni.reLaunch({ url: '/pages/mine/index' })
+        }
+      })
+    }
+  }
+}
+</script>
+
+<style scoped>
+.single-match-page {
+  width: 750rpx;
+  min-height: 1632rpx; /* 对应816px */
+  background: #F5F5F5;
+  position: relative;
+  margin: 0 auto;
+  padding-bottom: 112rpx; /* 为底部导航栏留空间 */
+}
+
+
+/* 渐变背景容器 */
+.gradient-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 246rpx;
+  z-index: 1;
+}
+
+.gradient-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 246rpx;
+  background: url('/static/match-single-part1/part1-banner-background.png') no-repeat center center;
+  background-size: cover;
+}
+
+/* 标签切换区域 */
+.tab-section {
+  position: absolute;
+  top: 72rpx; /* 对应36px */
+  left: 138rpx; /* 对应69px */
+  width: 472rpx; /* 对应236px */
+  height: 74rpx; /* 对应37px */
+  z-index: 10;
+}
+
+.tab-group {
+  display: flex;
+  height: 100%;
+  position: relative;
+}
+
+.tab-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 74rpx;
+  position: relative;
+}
+
+.tab-text {
+  font-size: 32rpx;
+  font-weight: 400;
+  color: #FFFFFF;
+}
+
+.tab-text.active {
+  font-weight: 700;
+}
+
+.tab-indicator {
+  position: absolute;
+  bottom: 13rpx;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120rpx;
+  height: 36rpx;
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 180rpx;
+}
+
+/* 你的期望标题区域 */
+.expectation-header {
+  position: absolute;
+  top: 172rpx; /* 对应86px，从背景底部开始 */
+  left: 0;
+  right: 0;
+  height: 90rpx; /* 对应45px */
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 60rpx; /* 左右padding保持30px */
+  z-index: 10;
+}
+
+.expectation-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #000000;
+}
+
+.action-buttons {
+  display: flex;
+  gap: 20rpx;
+}
+
+.action-btn {
+  width: 200rpx;
+  height: 64rpx;
+  background: transparent;
+  border: none;
+  font-size: 32rpx;
+  color: #000000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.action-btn::after {
+  border: none;
+}
+
+/* 主要内容区域 */
+.content-section {
+  position: relative;
+  top: 300rpx; /* 从渐变背景+期望标题下方开始 */
+  padding: 0 60rpx 200rpx;
+  z-index: 2;
+}
+
+.form-group {
+  margin-bottom: 66rpx;
+}
+
+.form-label-row {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20rpx;
+}
+
+.form-icon {
+  width: 66rpx;
+  height: 52rpx;
+  margin-right: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+.icon-star {
+  width: 40rpx;
+  height: 40rpx;
+}
+
+.form-label {
+  font-size: 32rpx;
+  color: #000000;
+  flex: 1;
+}
+
+.form-input-container {
+  width: 624rpx; /* 对应312px */
+  height: 64rpx; /* 对应32px */
+  background: #FFFFFF;
+  border-radius: 180rpx; /* 对应90px */
+  margin-left: 66rpx; /* 调整对齐 */
+}
+
+.form-picker {
+  width: 100%;
+  height: 100%;
+}
+
+.picker-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  padding: 0 40rpx;
+}
+
+.picker-text {
+  font-size: 24rpx;
+  color: #9094A6;
+}
+
+.form-input {
+  width: 100%;
+  height: 100%;
+  padding: 0 40rpx;
+  font-size: 24rpx;
+  color: #000000;
+  background: transparent;
+  border: none;
+}
+
+.form-input::placeholder {
+  color: #9094A6;
+}
+
+/* 底部按钮区域 */
+.bottom-buttons {
+  position: absolute;
+  top: 1000rpx; /* 调整位置，避免被导航栏遮挡 */
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 40rpx; /* 增加按钮间距 */
+  z-index: 10;
+  margin-bottom: 150rpx; /* 为导航栏留出空间 */
+}
+
+.start-match-btn {
+  width: 358rpx; /* 对应179px */
+  height: 104rpx; /* 对应52px */
+  background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
+  border-radius: 180rpx; /* 对应90px */
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20rpx;
+  position: relative;
+}
+
+.start-match-btn:disabled {
+  background: #1F2635;
+}
+
+.start-match-btn::after {
+  border: none;
+}
+
+.save-btn {
+  width: 358rpx; /* 对应179px */
+  height: 104rpx; /* 对应52px */
+  background: #1F2635;
+  border-radius: 180rpx; /* 对应90px */
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.save-btn::after {
+  border: none;
+}
+
+.btn-icon {
+  width: 32rpx;
+  height: 32rpx;
+}
+
+.btn-icon.left {
+  position: absolute;
+  left: 60rpx;
+}
+
+.btn-icon.right {
+  position: absolute;
+  right: 58rpx;
+}
+
+.btn-text {
+  font-size: 32rpx;
+  color: #FFFFFF;
+  font-weight: 400;
+}
+
+/* 选中状态样式 - 移除不兼容的:has()选择器 */
+
+/* 底部导航栏 */
+.bottom-navigation {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 112rpx; /* 对应56px */
+  background: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: 0;
+  z-index: 100;
+  box-shadow: 0 -2rpx 10rpx rgba(0, 0, 0, 0.1);
+}
+
+.nav-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 112rpx; /* 对应56px */
+  height: 112rpx;
+  cursor: pointer;
+}
+
+.nav-icon-wrapper {
+  width: 56rpx; /* 对应28px */
+  height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8rpx;
+}
+
+.nav-icon {
+  width: 48rpx; /* 对应24px */
+  height: 48rpx;
+}
+
+.nav-text {
+  font-size: 20rpx; /* 对应10px */
+  color: #9094A6;
+  font-weight: 400;
+  text-align: center;
+  line-height: 24rpx; /* 对应12px */
+}
+
+.nav-text.active {
+  color: #1F2635;
+  font-weight: 400;
+}
+
+/* 为"报名-匹配"选中状态特殊处理 */
+.nav-item.active .nav-text {
+  color: #1F2635;
+}
+</style>
