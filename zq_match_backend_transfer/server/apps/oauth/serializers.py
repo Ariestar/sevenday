@@ -311,3 +311,74 @@ class RegisterSerializer(serializers.Serializer):
         user.set_password(password)
         user.save()
         return user
+
+
+class EmailVerifyCodeSerializer(serializers.Serializer):
+    """
+    邮箱验证码发送序列化器
+    """
+    email = serializers.EmailField(label="邮箱")
+    
+    def validate_email(self, value):
+        """验证武大邮箱格式"""
+        if not (value.endswith('@whu.edu.cn') or value.endswith('@stu.whu.edu.cn')):
+            raise serializers.ValidationError("请输入有效的武大邮箱")
+        return value
+
+
+class EmailVerifySerializer(serializers.Serializer):
+    """
+    邮箱验证码验证序列化器
+    """
+    email = serializers.EmailField(label="邮箱")
+    code = serializers.CharField(max_length=6, min_length=6, label="验证码")
+    
+    def validate_email(self, value):
+        """验证武大邮箱格式"""
+        if not (value.endswith('@whu.edu.cn') or value.endswith('@stu.whu.edu.cn')):
+            raise serializers.ValidationError("请输入有效的武大邮箱")
+        return value
+    
+    def validate_code(self, value):
+        """验证验证码格式"""
+        if not value.isdigit() or len(value) != 6:
+            raise serializers.ValidationError("验证码格式不正确")
+        return value
+    
+    def validate(self, attrs):
+        """验证验证码是否正确"""
+        email = attrs.get('email')
+        code = attrs.get('code')
+        
+        # 从缓存中获取验证码
+        from django.core.cache import cache
+        cache_key = f'email_verify_code_{email}'
+        cached_code = cache.get(cache_key)
+        
+        if not cached_code or cached_code != code:
+            raise serializers.ValidationError("验证码错误或已过期")
+        
+        return attrs
+    
+    def create(self, validated_data):
+        """获取或创建用户"""
+        email = validated_data['email']
+        
+        # 查找用户，如果不存在则创建
+        try:
+            user = User.objects.get(email=email)
+        except User.DoesNotExist:
+            # 自动创建用户
+            user = User.objects.create(
+                email=email,
+                username=f"user_{email.split('@')[0]}",
+                is_authenticated=True,
+                is_staff=False
+            )
+        
+        # 清除验证码
+        from django.core.cache import cache
+        cache_key = f'email_verify_code_{email}'
+        cache.delete(cache_key)
+        
+        return user
