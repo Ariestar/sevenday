@@ -2,11 +2,14 @@ version: "3.8"
 
 services:
   django:
+    build: .
     image: match_django
     restart: always
     container_name: match-django
     depends_on:
       - redis
+    ports:
+      - "8000:8000"
     networks:
       - app-net
 
@@ -14,6 +17,8 @@ services:
     image: registry-vpc.cn-hangzhou.aliyuncs.com/ziqiang_studio/caddy:latest
     depends_on:
       - django
+    environment:
+      - DJANGO_ALLOWED_HOSTS=121.40.155.61,localhost,127.0.0.1
     networks:
       - app-net
       - traefik

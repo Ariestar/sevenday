@@ -8,6 +8,7 @@ DEBUG = config("DJANGO_DEBUG", True, cast=bool)
 ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
+    "121.40.155.61",
     "match.ziqiang.net.cn",
     "api.match.ziqiang.net.cn",
     "test.match.ziqiang.net.cn",
