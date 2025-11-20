@@ -188,6 +188,78 @@ class ApplicationViewSet(viewsets.ModelViewSet):
     def signup_detail(self, request):
         """获取我的报名表详情（前端使用）"""
         return self.my_application(request)
+    
+    @action(methods=["post"], detail=False, url_path="update")
+    def signup_update(self, request):
+        """更新报名信息（前端使用）"""
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        try:
+            # 检查用户是否已有报名表
+            application = Application.objects.filter(user=request.user).first()
+            if not application:
+                raise ApiException(
+                    ResponseType.ResourceNotFound,
+                    msg="您还没有提交报名表，无法更新",
+                )
+            
+            logger.info(f"用户 {request.user.id} 更新报名数据: {request.data}")
+            
+            # 使用前端适配序列化器进行更新
+            serializer = SignupSerializer(application, data=request.data, context={'request': request}, partial=True)
+            
+            # 验证数据
+            if not serializer.is_valid():
+                errors = serializer.errors
+                error_messages = []
+                
+                for field, field_errors in errors.items():
+                    if isinstance(field_errors, list):
+                        for error in field_errors:
+                            error_messages.append(f"{self._get_field_label(field)}: {str(error)}")
+                    else:
+                        error_messages.append(f"{self._get_field_label(field)}: {str(field_errors)}")
+                
+                if not error_messages:
+                    error_messages = [str(errors)]
+                
+                raise ApiException(
+                    ResponseType.ParamValidationFailed,
+                    msg=error_messages[0] if len(error_messages) == 1 else "数据验证失败",
+                    detail="; ".join(error_messages) if len(error_messages) > 1 else error_messages[0],
+                    record=True,
+                )
+            
+            serializer.save()
+            
+            logger.info(f"报名表更新成功: {application.id}")
+            
+            # 返回标准格式的序列化数据
+            result_serializer = ApplicationSerializer(application, context={'request': request})
+            return Response(result_serializer.data, status=status.HTTP_200_OK)
+            
+        except ApiException:
+            raise
+        except Exception as e:
+            logger.error(f"更新报名表失败: {e}", exc_info=True)
+            raise ApiException(
+                ResponseType.ServerError,
+                msg="更新报名失败",
+                detail=str(e),
+                record=True,
+            )
+    
+    @action(methods=["get"], detail=False, url_path="status")
+    def signup_status(self, request):
+        """检查报名状态（前端使用）"""
+        application = Application.objects.filter(user=request.user).first()
+        
+        return Response({
+            "hasSignup": application is not None,
+            "applicationId": application.id if application else None,
+            "isMatch": request.user.is_match if application else False,
+        })
 
     @action(methods=["get"], detail=False, url_path="match-status")
     def match_status(self, request):
@@ -339,3 +411,44 @@ class ApplicationViewSet(viewsets.ModelViewSet):
                 'is_matched': request.user.is_match,
                 'team_id': request.user.team_id if request.user.team else None,
             })
+    
+    @action(methods=["post"], detail=False, url_path="cancel")
+    def cancel_signup(self, request):
+        """取消报名"""
+        user = request.user
+        
+        # 检查是否有报名表
+        try:
+            application = Application.objects.get(user=user)
+        except Application.DoesNotExist:
+            raise ApiException(
+                ResponseType.ResourceNotFound,
+                msg="您还没有报名，无法取消",
+            )
+        
+        # 如果已组队，解散队伍
+        if user.is_match and user.team:
+            team = user.team
+            from django.db import transaction
+            with transaction.atomic():
+                # 重置所有成员的状态
+                members = User.objects.filter(team=team)
+                members.update(is_match=False, team=None)
+                
+                # 删除队伍
+                team.delete()
+        
+        # 删除报名表
+        application.delete()
+        
+        # 重置用户匹配状态（如果还有残留）
+        if user.is_match:
+            user.is_match = False
+            user.team = None
+            user.save()
+        
+        return Response({
+            "code": "00000",
+            "msg": "报名已取消",
+            "data": {}
+        })

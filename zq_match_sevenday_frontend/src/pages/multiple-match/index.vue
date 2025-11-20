@@ -21,6 +21,18 @@
 
     <!-- 主要内容区域 -->
     <view class="main-content">
+      <!-- 邀请提示卡片 -->
+      <view v-if="hasPendingInvitation && invitationInfo" class="invitation-notice-card" @click="goToInvitationConfirm">
+        <view class="notice-content">
+          <image class="notice-icon" src="/static/match-mutiple-part1/star.png" mode="aspectFit"></image>
+          <view class="notice-text">
+            <text class="notice-title">收到组队邀请</text>
+            <text class="notice-desc">用户 {{ invitationInfo.inviter.username || '未知' }} 向您发送了组队邀请</text>
+          </view>
+          <text class="notice-arrow">></text>
+        </view>
+      </view>
+      
       <!-- 输入卡片 -->
       <view class="input-card">
         <!-- 标题图标和文字 -->
@@ -59,6 +71,7 @@
 
 <script>
 import CustomTabBar from '@/components/CustomTabBar.vue'
+import { getInvitation, targetMatch } from '../../services/match'
 
 export default {
   components: {
@@ -66,10 +79,88 @@ export default {
   },
   data() {
     return {
-      studentNumber: ''
+      studentNumber: '',
+      hasPendingInvitation: false,
+      invitationInfo: null
     }
   },
+  onLoad() {
+    // 检查是否有待处理的邀请
+    this.checkPendingInvitation()
+  },
+  onShow() {
+    // 每次显示页面时也检查邀请（但不显示弹窗，只更新卡片）
+    // 避免频繁弹窗干扰用户操作
+    this.checkPendingInvitation()
+  },
   methods: {
+    async checkPendingInvitation() {
+      try {
+        console.log('🔍 开始检查邀请...')
+        const result = await getInvitation()
+        console.log('🔍 检查邀请结果 (完整):', JSON.stringify(result, null, 2))
+        console.log('🔍 检查邀请结果类型:', typeof result)
+        
+        // 处理不同的响应格式
+        // 情况1: result 是 {code, msg, data: {hasInvitation, invitation}}
+        // 情况2: result 是 {hasInvitation, invitation} (已经提取了data)
+        let invitationData = null
+        
+        if (result && result.data) {
+          // 如果result有data字段，说明是完整响应，提取data
+          invitationData = result.data
+          console.log('🔍 从result.data提取数据:', invitationData)
+        } else if (result && typeof result.hasInvitation !== 'undefined') {
+          // 如果result直接有hasInvitation，说明已经是data了
+          invitationData = result
+          console.log('🔍 result本身就是data:', invitationData)
+        }
+        
+        console.log('🔍 invitationData:', invitationData)
+        console.log('🔍 hasInvitation:', invitationData?.hasInvitation)
+        console.log('🔍 invitation:', invitationData?.invitation)
+        
+        if (invitationData && invitationData.hasInvitation === true && invitationData.invitation) {
+          console.log('✅ 检测到待处理的邀请:', invitationData.invitation)
+          this.hasPendingInvitation = true
+          this.invitationInfo = invitationData.invitation
+          console.log('✅ 邀请信息已设置:', {
+            hasPendingInvitation: this.hasPendingInvitation,
+            invitationInfo: this.invitationInfo
+          })
+        } else {
+          console.log('ℹ️ 没有待处理的邀请')
+          this.hasPendingInvitation = false
+          this.invitationInfo = null
+        }
+      } catch (error) {
+        console.error('❌ 检查邀请失败:', error)
+        console.error('❌ 错误详情:', {
+          message: error.message,
+          errMsg: error.errMsg,
+          errno: error.errno,
+          stack: error.stack
+        })
+        this.hasPendingInvitation = false
+        this.invitationInfo = null
+        
+        // 开发阶段：如果是无效URL错误，忽略
+        if (!error.errMsg?.includes('invalid url') && error.errno !== 600009) {
+          console.warn('⚠️ 检查邀请时出错，继续显示匹配页面')
+        }
+      }
+    },
+    goToInvitationConfirm() {
+      // 跳转到邀请确认页面
+      uni.redirectTo({
+        url: '/pages/multiple-match-confirm/index',
+        fail: () => {
+          uni.navigateTo({
+            url: '/pages/multiple-match-confirm/index'
+          })
+        }
+      })
+    },
     goToSignup() {
       uni.reLaunch({
         url: '/pages/signup/index',
@@ -82,7 +173,7 @@ export default {
       })
     },
     
-    handleConfirm() {
+    async handleConfirm() {
       if (!this.studentNumber.trim()) {
         uni.showToast({
           title: '请输入学号',
@@ -91,34 +182,85 @@ export default {
         return
       }
       
-      // 显示发送组队申请成功
-      uni.showToast({
-        title: '组队申请已发送',
-        icon: 'success'
-      })
-      
-      // 模拟跳转到对方的确认页面（实际应用中这个页面是对方看到的）
-      setTimeout(() => {
-        const inviterInfo = {
-          name: this.studentNumber,
-          gender: '男',
-          education: '本科生',
-          majorCategory: '计算机类',
-          college: '计算机学院',
-          bio: '这是一段个人简介示例内容'
+      try {
+        uni.showLoading({ title: '匹配中...' })
+        
+        // 调用组队匹配接口（发送邀请）
+        const result = await targetMatch(this.studentNumber.trim())
+        console.log('组队匹配结果:', result)
+        
+        uni.hideLoading()
+        
+        // 如果直接组队成功（双向邀请）
+        if (result && result.team) {
+          // 更新本地存储，标记已组队
+          uni.setStorageSync('hasTeam', true)
+          uni.setStorageSync('justCreatedTeam', true)
+          
+          // 检查后端返回的队名
+          const teamNameFromAPI = result?.data?.team?.name || result?.team?.name
+          if (teamNameFromAPI && teamNameFromAPI.trim()) {
+            // 如果后端已设置队名，使用该队名
+            uni.setStorageSync('teamName', teamNameFromAPI)
+          } else {
+            // 如果后端未设置队名，不设置默认值，让用户有机会创建队名
+            uni.removeStorageSync('teamName')
+          }
+          
+          // 显示成功提示
+          uni.showToast({
+            title: '组队成功！',
+            icon: 'success'
+          })
+          
+          // 跳转到打卡页面
+          setTimeout(() => {
+            uni.reLaunch({
+              url: '/pages/checkin-detail/index',
+              fail: () => {
+                uni.switchTab({
+                  url: '/pages/checkin-detail/index'
+                })
+              }
+            })
+          }, 1500)
+        } else {
+          // 邀请已发送，跳转到等待确认页面（实际应该通知对方）
+          uni.showToast({
+            title: '邀请已发送，等待对方确认',
+            icon: 'success'
+          })
+          
+          // 跳转回匹配页面
+          setTimeout(() => {
+            uni.navigateBack()
+          }, 1500)
         }
         
-        uni.navigateTo({
-          url: `/pages/multiple-match-confirm/index?inviterInfo=${encodeURIComponent(JSON.stringify(inviterInfo))}`,
-          fail: (err) => {
-            console.warn('跳转到确认页面失败:', err)
-            uni.showToast({
-              title: '跳转失败',
-              icon: 'none'
+      } catch (error) {
+        uni.hideLoading()
+        console.error('组队匹配失败:', error)
+        
+        // 开发阶段：如果是无效URL错误，模拟成功
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，模拟组队成功')
+          uni.showToast({
+            title: '组队成功！',
+            icon: 'success'
+          })
+          setTimeout(() => {
+            uni.reLaunch({
+              url: '/pages/checkin-detail/index'
             })
-          }
-        })
-      }, 1500)
+          }, 1500)
+        } else {
+          uni.showToast({
+            title: error.message || '组队失败，请检查学号是否正确',
+            icon: 'none',
+            duration: 2000
+          })
+        }
+      }
     }
   }
 }
@@ -226,6 +368,57 @@ export default {
   padding-top: 222rpx; /* 对应111px */
   padding-left: 44rpx; /* 对应22px */
   padding-right: 44rpx; /* 对应22px */
+}
+
+/* 邀请提示卡片 */
+.invitation-notice-card {
+  width: 664rpx;
+  background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
+  border-radius: 18rpx;
+  padding: 30rpx 40rpx;
+  margin-bottom: 30rpx;
+  box-shadow: 0 4rpx 12rpx rgba(161, 0, 254, 0.3);
+}
+
+.notice-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.notice-icon {
+  width: 48rpx;
+  height: 48rpx;
+  margin-right: 20rpx;
+}
+
+.notice-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.notice-title {
+  font-family: 'Inter';
+  font-weight: 700;
+  font-size: 32rpx;
+  line-height: 38rpx;
+  color: #FFFFFF;
+  margin-bottom: 8rpx;
+}
+
+.notice-desc {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 24rpx;
+  line-height: 28rpx;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.notice-arrow {
+  font-size: 32rpx;
+  color: #FFFFFF;
+  font-weight: 700;
 }
 
 /* 输入卡片 */

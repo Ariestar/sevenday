@@ -38,23 +38,23 @@
       <view class="teammate-info">
         <view class="info-item">
           <text class="info-label">姓名：</text>
-          <text class="info-value">{{ matchResult.name || '张同学' }}</text>
+          <text class="info-value">{{ matchResult.name}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">性别：</text>
-          <text class="info-value">{{ matchResult.gender || '女' }}</text>
+          <text class="info-value">{{ matchResult.gender}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">学历：</text>
-          <text class="info-value">{{ matchResult.education || '本科生' }}</text>
+          <text class="info-value">{{ matchResult.education}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">大类：</text>
-          <text class="info-value">{{ matchResult.majorCategory || '工科' }}</text>
+          <text class="info-value">{{ matchResult.majorCategory}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">院系：</text>
-          <text class="info-value">{{ matchResult.college || '计算机学院' }}</text>
+          <text class="info-value">{{ matchResult.college  }}</text>
         </view>
       </view>
     </view>
@@ -155,6 +155,7 @@
 
 <script>
 import SuccessModal from '../../components/SuccessModal.vue'
+import { recommendMatches, confirmMatch, rejectMatch } from '../../services/match'
 
 export default {
   components: {
@@ -163,6 +164,7 @@ export default {
   data() {
     return {
       matchResult: {
+        id: null,
         name: '',
         gender: '',
         education: '',
@@ -170,6 +172,9 @@ export default {
         college: '',
         avatar: ''
       },
+      recommendations: [], // 推荐列表
+      currentIndex: 0, // 当前显示的推荐索引
+      loading: false,
       showSuccessModal: false,
       successType: 'team-success',
       successTitle: '组队成功！',
@@ -179,7 +184,7 @@ export default {
   onLoad(options) {
     console.log('单人匹配结果页面加载', options)
     
-    // 从上一个页面接收匹配结果数据
+    // 从上一个页面接收匹配结果数据（如果有）
     if (options.matchData) {
       try {
         this.matchResult = JSON.parse(decodeURIComponent(options.matchData))
@@ -188,19 +193,81 @@ export default {
       }
     }
     
-    // 如果没有匹配数据，使用默认数据
-    if (!this.matchResult.name) {
-      this.matchResult = {
-        name: '张同学',
-        gender: '女',
-        education: '本科生',
-        majorCategory: '工科',
-        college: '计算机学院',
-        avatar: ''
-      }
-    }
+    // 加载推荐匹配对象
+    this.loadRecommendations()
   },
   methods: {
+    async loadRecommendations() {
+      this.loading = true
+      try {
+        const result = await recommendMatches({ limit: 10 })
+        console.log('推荐结果:', result)
+        
+        if (result && result.recommendations && result.recommendations.length > 0) {
+          this.recommendations = result.recommendations
+          // 显示第一个推荐对象
+          this.updateCurrentMatch(0)
+        } else {
+          uni.showToast({
+            title: '暂无推荐对象',
+            icon: 'none'
+          })
+          // 使用默认数据
+          this.matchResult = {
+            id: null,
+            name: '暂无匹配对象',
+            gender: '',
+            education: '',
+            majorCategory: '',
+            college: '',
+            avatar: ''
+          }
+        }
+      } catch (error) {
+        console.error('加载推荐失败:', error)
+        
+        // 开发阶段：如果是无效URL错误，使用默认数据
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，使用默认数据')
+          this.matchResult = {
+            id: null,
+            name: '张同学',
+            gender: '女',
+            education: '本科生',
+            majorCategory: '工科',
+            college: '计算机学院',
+            avatar: ''
+          }
+        } else {
+          uni.showToast({
+            title: error.message || '加载推荐失败',
+            icon: 'none'
+          })
+        }
+      } finally {
+        this.loading = false
+      }
+    },
+    updateCurrentMatch(index) {
+      if (index >= 0 && index < this.recommendations.length) {
+        const rec = this.recommendations[index]
+        this.currentIndex = index
+        // 转换用户数据格式
+        this.matchResult = {
+          id: rec.id,
+          name: rec.username || rec.name || '未知',
+          gender: rec.gender === 1 ? '男' : (rec.gender === 2 ? '女' : ''),
+          education: this.getEducationFromGrade(rec.grade),
+          majorCategory: rec.major_category || '',
+          college: rec.academy?.name || '',
+          avatar: rec.avatar || ''
+        }
+      }
+    },
+    getEducationFromGrade(grade) {
+      if (!grade) return ''
+      return grade <= 4 ? '本科生' : (grade <= 6 ? '研究生' : '')
+    },
     // 返回期望填写界面
     backToExpectation() {
       uni.navigateBack({
@@ -229,118 +296,132 @@ export default {
     },
     // 处理组队确认
     async handleConfirmTeam() {
+      if (!this.matchResult.id) {
+        uni.showToast({
+          title: '请先选择匹配对象',
+          icon: 'none'
+        })
+        return
+      }
+      
       try {
         // 显示等待弹窗
         this.showWaitModal = true
         
-        // TODO: 调用确认组队API
-        console.log('确认组队:', this.matchResult)
-        
-        // 模拟API调用
-        await new Promise(resolve => setTimeout(resolve, 1000))
+        // 调用确认组队API
+        const result = await confirmMatch({ userId: this.matchResult.id })
+        console.log('确认组队成功:', result)
         
         // 隐藏等待弹窗
         this.showWaitModal = false
         
-        // 跳转到确认组队页面，显示组队成功状态
-        const teamData = {
-          myInfo: {
-            gender: '男',
-            education: '本科生', 
-            majorCategory: '理科',
-            college: '物理学院',
-            qq: '123456',
-            avatar: ''
-          },
-          partnerInfo: this.matchResult
-        }
+        // 显示成功提示
+        this.successType = 'team-success'
+        this.successTitle = '组队成功！'
+        this.showSuccessModal = true
         
-        // 使用 redirectTo 替换当前页面，避免页面栈过深
-        uni.redirectTo({
-          url: `/pages/single-match-confirm/index?teamData=${encodeURIComponent(JSON.stringify(teamData))}`,
-          success: () => {
-            console.log('跳转到确认组队页面成功')
-          },
-          fail: (err) => {
-            console.error('跳转到确认组队页面失败:', err)
-            // 降级方案：尝试使用 navigateTo
-            uni.navigateTo({
-              url: `/pages/single-match-confirm/index?teamData=${encodeURIComponent(JSON.stringify(teamData))}`,
-              success: () => {
-                console.log('使用 navigateTo 跳转成功')
-              },
-              fail: (err2) => {
-                console.error('所有跳转方式都失败:', err2)
-                // 最后降级：显示成功弹窗
-                this.successType = 'team-success'
-                this.successTitle = '组队成功！'
-                this.showSuccessModal = true
-              }
-            })
-          }
-        })
+        // 不自动跳转，让用户点击弹窗关闭按钮后再跳转
+        // 跳转逻辑移到 handleSuccessClose 方法中
         
       } catch (error) {
         // 隐藏等待弹窗
         this.showWaitModal = false
         console.error('组队失败:', error)
         
-        uni.showToast({
-          title: error.message || '组队失败，请重试',
-          icon: 'none'
-        })
+        // 开发阶段：如果是无效URL错误，模拟成功
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，模拟组队成功')
+          this.successType = 'team-success'
+          this.successTitle = '组队成功！'
+          this.showSuccessModal = true
+        } else {
+          uni.showToast({
+            title: error.message || '组队失败，请重试',
+            icon: 'none'
+          })
+        }
       }
     },
     // 处理拒绝组队
     async handleRejectTeam() {
-      try {
-        uni.showModal({
-          title: '确认拒绝',
-          content: '确定要拒绝与该同学组队吗？',
-          success: async (res) => {
-            if (res.confirm) {
+      uni.showModal({
+        title: '确认拒绝',
+        content: '确定要拒绝与该同学组队吗？',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
               uni.showLoading({ title: '处理中...' })
               
-              // TODO: 调用拒绝组队API
-              console.log('拒绝组队:', this.matchResult)
-              
-              // 模拟API调用
-              await new Promise(resolve => setTimeout(resolve, 800))
+              // 如果有当前匹配对象，调用拒绝接口
+              if (this.matchResult.id) {
+                try {
+                  await rejectMatch()
+                } catch (error) {
+                  console.error('拒绝匹配失败:', error)
+                  // 如果已经匹配失败，继续显示下一个推荐
+                }
+              }
               
               uni.hideLoading()
               
-              // 返回到期望填写界面，用户可以重新匹配
-              this.backToExpectation()
+              // 显示下一个推荐对象，如果没有则返回期望页面
+              if (this.currentIndex + 1 < this.recommendations.length) {
+                this.updateCurrentMatch(this.currentIndex + 1)
+                uni.showToast({
+                  title: '已拒绝，显示下一个推荐',
+                  icon: 'success'
+                })
+              } else {
+                // 没有更多推荐，提示用户并返回期望页面
+                uni.showToast({
+                  title: '已拒绝，请重新匹配',
+                  icon: 'success',
+                  duration: 2000
+                })
+                // 延迟返回，让用户看到提示
+                setTimeout(() => {
+                  this.backToExpectation()
+                }, 2000)
+              }
+            } catch (error) {
+              uni.hideLoading()
+              console.error('拒绝组队失败:', error)
               
-              uni.showToast({
-                title: '已拒绝组队',
-                icon: 'success'
-              })
+              // 开发阶段：如果是无效URL错误，继续流程
+              if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+                console.log('开发阶段：API未配置，继续流程')
+                if (this.currentIndex + 1 < this.recommendations.length) {
+                  this.updateCurrentMatch(this.currentIndex + 1)
+                } else {
+                  this.backToExpectation()
+                }
+              } else {
+                uni.showToast({
+                  title: error.message || '操作失败，请重试',
+                  icon: 'none'
+                })
+              }
             }
           }
-        })
-      } catch (error) {
-        console.error('拒绝组队失败:', error)
-        
-        uni.showToast({
-          title: error.message || '操作失败，请重试',
-          icon: 'none'
-        })
-      }
+        }
+      })
     },
     handleSuccessClose() {
       this.showSuccessModal = false
       
       if (this.successType === 'team-success') {
-        // 组队成功后跳转到其他页面（比如聊天页面或主页）
-        console.log('组队成功，跳转到主页')
-        uni.switchTab({
-          url: '/pages/checkin-detail/index',
-          fail: (err) => {
-            console.warn('跳转失败:', err)
-            uni.reLaunch({ url: '/pages/checkin-detail/index' })
-          }
-        })
+        // 组队成功后跳转到打卡页面
+        console.log('组队成功，跳转到打卡页面')
+        // 延迟一下，让弹窗关闭动画完成
+        setTimeout(() => {
+          uni.switchTab({
+            url: '/pages/checkin-detail/index',
+            fail: (err) => {
+              console.warn('switchTab失败，尝试reLaunch:', err)
+              uni.reLaunch({ url: '/pages/checkin-detail/index' })
+            }
+          })
+        }, 300)
       }
     },
     goToSignup() {

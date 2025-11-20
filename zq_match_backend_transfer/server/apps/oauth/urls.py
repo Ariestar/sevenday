@@ -20,6 +20,7 @@ from .views import (
     UpdateUserInfoView,
     UserInfoView,
     WechatLoginView,
+    WxLoginView,
     ZqAuthLoginView,
     RegisterView,
 )
@@ -43,6 +44,8 @@ urlpatterns = [
     path("userInfo", UserInfoView.as_view(), name="user_info_no_slash"),  # 获取当前用户信息（无斜杠版本）
     path("updateUserInfo/", UpdateUserInfoView.as_view(), name="update_user_info"),  # 更新用户信息
     path("updateUserInfo", UpdateUserInfoView.as_view(), name="update_user_info_no_slash"),  # 更新用户信息（无斜杠版本）
+    path("wxLogin/", WxLoginView.as_view(), name="wx_login"),  # 微信登录（前端使用）
+    path("wxLogin", WxLoginView.as_view(), name="wx_login_no_slash"),  # 微信登录（无斜杠版本）
     # 以下登录方式已禁用，仅保留武大邮箱登录+QQ绑定功能
     # path("qq/", QQLoginView.as_view(), name="qq_login"),  # QQ登录（已禁用）
     # path("wechat/", WechatLoginView.as_view(), name="wechat_login"),  # 微信登录（已禁用）

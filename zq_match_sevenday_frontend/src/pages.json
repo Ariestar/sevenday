@@ -53,7 +53,8 @@
       "path": "pages/checkin-detail/index",
       "style": {
         "navigationBarTitleText": "组队打卡",
-        "navigationStyle": "custom"
+        "navigationStyle": "custom",
+        "enablePullDownRefresh": true
       }
     },
     {

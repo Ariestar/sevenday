@@ -8,7 +8,7 @@ import { get, post } from '../utils/request'
  * 获取打卡任务列表（10天）
  */
 export function getCheckinTasks() {
-  return get('/api/checkin/tasks')
+  return get('/api/checkin/tasks/')
 }
 
 /**
@@ -20,7 +20,7 @@ export function getCheckinTasks() {
  * @param {boolean} data.syncToSquare - 是否同步到广场
  */
 export function submitCheckin(data) {
-  return post('/api/checkin/submit', data, { showLoading: true, loadingText: '提交中...' })
+  return post('/api/checkin/submit/', data, { showLoading: true, loadingText: '提交中...' })
 }
 
 /**
@@ -28,21 +28,21 @@ export function submitCheckin(data) {
  * @param {number} day - 第几天
  */
 export function getCheckinDetail(day) {
-  return get('/api/checkin/detail', { day })
+  return get('/api/checkin/detail/', { day })
 }
 
 /**
  * 获取我的打卡记录列表
  */
 export function getMyCheckinList() {
-  return get('/api/checkin/myList')
+  return get('/api/checkin/myList/')
 }
 
 /**
  * 获取队友的打卡记录列表
  */
 export function getTeammateCheckinList() {
-  return get('/api/checkin/teammateList')
+  return get('/api/checkin/teammateList/')
 }
 
 /**
@@ -51,6 +51,6 @@ export function getTeammateCheckinList() {
  * @param {object} data - 新的打卡数据
  */
 export function resubmitCheckin(checkinId, data) {
-  return post('/api/checkin/resubmit', { checkinId, ...data }, { showLoading: true, loadingText: '提交中...' })
+  return post('/api/checkin/resubmit/', { checkinId, ...data }, { showLoading: true, loadingText: '提交中...' })
 }
 

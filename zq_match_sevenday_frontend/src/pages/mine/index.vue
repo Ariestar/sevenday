@@ -140,8 +140,9 @@ export default {
       this.loginModalVisible = false
     },
     
-    handleLoginSuccess(userInfo) {
-      this.userInfo = userInfo
+    async handleLoginSuccess(userInfo) {
+      // 登录成功后，重新加载用户信息以确保数据最新
+      await this.loadUserInfo()
       this.loginModalVisible = false
       uni.showToast({
         title: '登录成功',

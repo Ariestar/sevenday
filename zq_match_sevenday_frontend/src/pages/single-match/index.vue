@@ -79,7 +79,7 @@
         </view>
       </view>
 
-      <!-- 学院输入 -->
+      <!-- 学院选择 -->
       <view class="form-group">
         <view class="form-label-row">
           <view class="form-icon">
@@ -88,12 +88,17 @@
           <text class="form-label">你希望匹配对象的学院</text>
         </view>
         <view class="form-input-container">
-          <input
-            v-model="expectation.college"
-            placeholder="请输入"
-            class="form-input"
-            maxlength="50"
-          />
+          <picker 
+            :value="selectedAcademyIndex" 
+            :range="academyOptions" 
+            range-key="name"
+            @change="onAcademyChange"
+            class="form-picker"
+          >
+            <view class="picker-content">
+              <text class="picker-text">{{ expectation.college || '请选择' }}</text>
+            </view>
+          </picker>
         </view>
       </view>
     </view>
@@ -161,7 +166,8 @@
 
 <script>
 import { GENDER_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
-import { saveMatchExpectation } from '../../services/match'
+import { saveMatchExpectation, getMatchExpectation } from '../../services/match'
+import { getAcademies } from '../../services/academies'
 import SuccessModal from '../../components/SuccessModal.vue'
 
 export default {
@@ -172,11 +178,13 @@ export default {
     return {
       expectation: {
         gender: '',
+        degree: '',
         majorCategory: '',
         college: ''
       },
       genderOptions: GENDER_OPTIONS,
       majorOptions: MAJOR_CATEGORY_OPTIONS,
+      academyOptions: [], // 院系选项列表（扁平化后的）
       showSuccessModal: false,
       successType: 'save',
       successTitle: '保存成功！',
@@ -190,6 +198,9 @@ export default {
     selectedMajorIndex() {
       return this.majorOptions.findIndex(item => item.value === this.expectation.majorCategory)
     },
+    selectedAcademyIndex() {
+      return this.academyOptions.findIndex(item => item.name === this.expectation.college)
+    },
     isFormValid() {
       return this.expectation.gender && this.expectation.majorCategory
     }
@@ -200,6 +211,8 @@ export default {
     if (options.from === 'signup') {
       console.log('从报名页面跳转过来')
     }
+    this.loadAcademies()
+    this.loadMatchExpectation()
   },
   methods: {
     onGenderChange(e) {
@@ -209,6 +222,65 @@ export default {
     onMajorChange(e) {
       const index = e.detail.value
       this.expectation.majorCategory = this.majorOptions[index]?.value || ''
+    },
+    onAcademyChange(e) {
+      const index = e.detail.value
+      const academy = this.academyOptions[index]
+      if (academy) {
+        this.expectation.college = academy.name
+      }
+    },
+    async loadAcademies() {
+      try {
+        const academies = await getAcademies()
+        // 将嵌套的院系数据扁平化，包含父级和子级
+        const flatAcademies = []
+        academies.forEach(parent => {
+          // 添加父级院系
+          flatAcademies.push({ id: parent.id, name: parent.name })
+          // 添加子级院系
+          if (parent.children && parent.children.length > 0) {
+            parent.children.forEach(child => {
+              flatAcademies.push({ id: child.id, name: child.name })
+            })
+          }
+        })
+        this.academyOptions = flatAcademies
+      } catch (err) {
+        console.error('加载院系列表失败:', err)
+        // 如果API调用失败，使用空数组，不影响页面显示
+        this.academyOptions = []
+      }
+    },
+    async loadMatchExpectation() {
+      try {
+        const result = await getMatchExpectation()
+        if (result) {
+          // 更新期望数据
+          if (result.gender) {
+            // 转换格式：男/女 -> male/female
+            if (result.gender === '男') {
+              this.expectation.gender = 'male'
+            } else if (result.gender === '女') {
+              this.expectation.gender = 'female'
+            } else {
+              this.expectation.gender = result.gender
+            }
+          }
+          if (result.degree) {
+            this.expectation.degree = result.degree
+          }
+          if (result.majorCategory) {
+            this.expectation.majorCategory = result.majorCategory
+          }
+          if (result.college) {
+            this.expectation.college = result.college
+          }
+        }
+      } catch (err) {
+        console.error('加载匹配期望失败:', err)
+        // 如果API调用失败，不影响页面显示
+      }
     },
     getGenderLabel(value) {
       const option = this.genderOptions.find(item => item.value === value)
@@ -283,7 +355,15 @@ export default {
       try {
         uni.showLoading({ title: '保存中...' })
         
-        const result = await saveMatchExpectation(this.expectation)
+        // 准备保存数据，确保包含所有字段
+        const saveData = {
+          gender: this.expectation.gender || '',
+          degree: this.expectation.degree || '',
+          majorCategory: this.expectation.majorCategory || '',
+          college: this.expectation.college || ''
+        }
+        
+        const result = await saveMatchExpectation(saveData)
         console.log('保存成功:', result)
         
         uni.hideLoading()
@@ -312,7 +392,7 @@ export default {
         this.saving = false
       }
     },
-    handleIntelligentMatch() {
+    async handleIntelligentMatch() {
       // 检查是否填写了期望信息
       if (!this.expectation.gender || !this.expectation.majorCategory) {
         uni.showToast({
@@ -322,23 +402,54 @@ export default {
         return
       }
       
-      // 保存期望信息到本地存储
-      uni.setStorageSync('singleMatchExpectation', this.expectation)
-      
-      // 跳转到智能匹配页面
-      uni.navigateTo({
-        url: '/pages/single-match-result/index',
-        success: () => {
-          console.log('跳转到智能匹配页面成功')
-        },
-        fail: (err) => {
-          console.error('跳转失败:', err)
+      try {
+        uni.showLoading({ title: '保存中...' })
+        
+        // 先保存期望信息
+        const saveData = {
+          gender: this.expectation.gender || '',
+          degree: this.expectation.degree || '',
+          majorCategory: this.expectation.majorCategory || '',
+          college: this.expectation.college || ''
+        }
+        
+        await saveMatchExpectation(saveData)
+        uni.hideLoading()
+        
+        // 跳转到智能匹配页面
+        uni.navigateTo({
+          url: '/pages/single-match-result/index',
+          success: () => {
+            console.log('跳转到智能匹配页面成功')
+          },
+          fail: (err) => {
+            console.error('跳转失败:', err)
+            uni.showToast({
+              title: '跳转失败，请重试',
+              icon: 'none'
+            })
+          }
+        })
+      } catch (error) {
+        uni.hideLoading()
+        console.error('保存期望失败:', error)
+        
+        // 开发阶段：如果是无效URL错误，允许继续
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，继续跳转')
+          uni.navigateTo({
+            url: '/pages/single-match-result/index',
+            fail: (err) => {
+              console.error('跳转失败:', err)
+            }
+          })
+        } else {
           uni.showToast({
-            title: '跳转失败，请重试',
+            title: error.message || '保存失败，请重试',
             icon: 'none'
           })
         }
-      })
+      }
     },
     handleSuccessClose() {
       this.showSuccessModal = false

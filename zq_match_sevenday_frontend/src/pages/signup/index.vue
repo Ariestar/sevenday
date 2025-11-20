@@ -39,7 +39,10 @@
           <image src="/static/signup/personal-info.png" class="info-icon" mode="aspectFit" />
           <text class="info-title">个人信息</text>
         </view>
-        <button class="save-btn" @click="handleSave">保存</button>
+        <view class="header-buttons">
+          <button v-if="isEdit" class="cancel-btn" @click="handleCancel">取消报名</button>
+          <button class="save-btn" @click="handleSave">保存</button>
+        </view>
       </view>
       
       <!-- 分割线 -->
@@ -92,7 +95,13 @@
         <!-- 院系 -->
         <view class="form-row">
           <text class="form-label">院系</text>
-          <input v-model="formData.college" class="form-input-field" placeholder="请输入" />
+          <picker mode="selector" :range="academyOptions" range-key="name" @change="onAcademyChange">
+            <view class="form-input-field">
+              <text :class="{'placeholder': !formData.college}">
+                {{ getAcademyName(formData.college) || '请选择' }}
+              </text>
+            </view>
+          </picker>
         </view>
 
         <!-- QQ号 -->
@@ -104,7 +113,15 @@
         <!-- 个人简介 -->
         <view class="form-row">
           <text class="form-label">个人简介</text>
-          <input v-model="formData.bio" class="form-input-field" placeholder="一句话概括一下自己吧~" />
+          <view class="bio-input-wrapper">
+            <input 
+              v-model="formData.bio" 
+              class="form-input-field" 
+              placeholder="一句话概括一下自己吧~" 
+              maxlength="500"
+            />
+            <text class="char-count">{{ (formData.bio || '').length }}/500</text>
+          </view>
         </view>
 
         <!-- 学号（隐藏显示，但需要填写） -->
@@ -149,8 +166,9 @@
 
 <script>
 import { GENDER_OPTIONS, DEGREE_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
-import { submitSignup, getSignupDetail } from '../../services/signup'
+import { submitSignup, getSignupDetail, cancelSignup, updateSignup } from '../../services/signup'
 import { uploadAvatar } from '../../services/upload'
+import { getAcademies } from '../../services/academies'
 import CustomTabBar from '../../components/CustomTabBar.vue'
 import SignupTypePicker from '../../components/SignupTypePicker.vue'
 import SuccessModal from '../../components/SuccessModal.vue'
@@ -177,6 +195,7 @@ export default {
       genderOptions: GENDER_OPTIONS.filter(opt => opt.value !== 'unlimited'),
       degreeOptions: DEGREE_OPTIONS.filter(opt => opt.value !== 'unlimited'),
       majorOptions: MAJOR_CATEGORY_OPTIONS,
+      academyOptions: [], // 院系选项列表（扁平化后的）
       submitting: false,
       isEdit: false,
       showSignupTypePicker: false,
@@ -194,6 +213,7 @@ export default {
   },
   onLoad() {
     this.loadSignupDetail()
+    this.loadAcademies()
   },
   onShow() {
     // 触发TabBar更新，确保选中状态正确
@@ -204,8 +224,36 @@ export default {
       try {
         const detail = await getSignupDetail()
         if (detail) {
-          this.formData = { ...this.formData, ...detail }
+          console.log('📝 加载报名详情:', detail)
+          
+          // 转换性别：后端返回中文，前端需要英文值
+          let genderValue = detail.gender
+          if (genderValue === '男' || genderValue === 'MALE' || genderValue === 1) {
+            genderValue = 'male'
+          } else if (genderValue === '女' || genderValue === 'FEMALE' || genderValue === 2) {
+            genderValue = 'female'
+          }
+          
+          // 转换学历：后端返回中文，前端需要英文值
+          let degreeValue = detail.degree
+          if (degreeValue === '本科' || degreeValue === 'UNDERGRADUATE') {
+            degreeValue = 'undergraduate'
+          } else if (degreeValue === '研究生' || degreeValue === 'POSTGRADUATE' || degreeValue === 'GRADUATE') {
+            degreeValue = 'postgraduate'
+          }
+          
+          console.log('📝 转换后的值:', { gender: genderValue, degree: degreeValue })
+          
+          // 合并数据，使用转换后的值
+          this.formData = { 
+            ...this.formData, 
+            ...detail,
+            gender: genderValue || detail.gender,
+            degree: degreeValue || detail.degree
+          }
           this.isEdit = true
+          
+          console.log('✅ 最终formData:', this.formData)
         }
       } catch (err) {
         console.log('首次报名')
@@ -222,6 +270,41 @@ export default {
     onMajorChange(e) {
       const index = e.detail.value
       this.formData.majorCategory = this.majorOptions[index].value
+    },
+    onAcademyChange(e) {
+      const index = e.detail.value
+      const academy = this.academyOptions[index]
+      if (academy) {
+        this.formData.college = academy.name
+      }
+    },
+    getAcademyName(value) {
+      // 如果value是院系名称，直接返回
+      if (!value) return ''
+      const academy = this.academyOptions.find(opt => opt.name === value)
+      return academy ? academy.name : value
+    },
+    async loadAcademies() {
+      try {
+        const academies = await getAcademies()
+        // 将嵌套的院系数据扁平化，包含父级和子级
+        const flatAcademies = []
+        academies.forEach(parent => {
+          // 添加父级院系
+          flatAcademies.push({ id: parent.id, name: parent.name })
+          // 添加子级院系
+          if (parent.children && parent.children.length > 0) {
+            parent.children.forEach(child => {
+              flatAcademies.push({ id: child.id, name: child.name })
+            })
+          }
+        })
+        this.academyOptions = flatAcademies
+      } catch (err) {
+        console.error('加载院系列表失败:', err)
+        // 如果API调用失败，使用空数组，不影响页面显示
+        this.academyOptions = []
+      }
     },
     getGenderLabel(value) {
       const option = this.genderOptions.find(opt => opt.value === value)
@@ -244,6 +327,7 @@ export default {
           const tempFilePath = res.tempFilePaths[0]
           try {
             const avatarUrl = await uploadAvatar(tempFilePath)
+            // avatarUrl 现在是字符串URL，直接赋值
             this.formData.avatar = avatarUrl
             uni.showToast({
               title: '头像上传成功',
@@ -251,6 +335,10 @@ export default {
             })
           } catch (err) {
             console.error('上传头像失败:', err)
+            uni.showToast({
+              title: err.message || '上传头像失败',
+              icon: 'none'
+            })
           }
         }
       })
@@ -264,12 +352,26 @@ export default {
         return
       }
 
+      // 验证个人简介长度
+      if (this.formData.bio && this.formData.bio.length > 500) {
+        uni.showToast({
+          title: '个人简介不能超过500个字符',
+          icon: 'none'
+        })
+        return
+      }
+
       this.submitting = true
       let saveSuccess = false
       try {
-        await submitSignup(this.formData)
+        // 如果已存在报名表，使用更新接口；否则使用创建接口
+        if (this.isEdit) {
+          await updateSignup(this.formData)
+        } else {
+          await submitSignup(this.formData)
+          this.isEdit = true
+        }
         saveSuccess = true
-        this.isEdit = true
       } catch (err) {
         console.error('保存失败:', err)
         // 开发阶段：如果是URL无效错误，允许模拟成功
@@ -278,6 +380,14 @@ export default {
           saveSuccess = true
           console.log('开发阶段：API未配置，模拟保存成功')
           this.isEdit = true
+        } else {
+          // 检查是否是字符长度错误
+          if (errorMsg.includes('500') || errorMsg.includes('字符')) {
+            uni.showToast({
+              title: '个人简介不能超过500个字符',
+              icon: 'none'
+            })
+          }
         }
       } finally {
         this.submitting = false
@@ -309,12 +419,30 @@ export default {
         return
       }
 
+      // 验证个人简介长度
+      if (this.formData.bio && this.formData.bio.length > 500) {
+        uni.showToast({
+          title: '个人简介不能超过500个字符',
+          icon: 'none'
+        })
+        return
+      }
+
       // 显示报名类型选择弹窗
       this.showSignupTypePicker = true
     },
     async handleSignupTypeSelect(type) {
       this.pendingSignupType = type
       this.showSignupTypePicker = false
+      
+      // 验证个人简介长度
+      if (this.formData.bio && this.formData.bio.length > 500) {
+        uni.showToast({
+          title: '个人简介不能超过500个字符',
+          icon: 'none'
+        })
+        return
+      }
       
       // 提交报名数据
       this.submitting = true
@@ -324,7 +452,14 @@ export default {
           ...this.formData,
           signupType: type // 添加报名类型
         }
-        await submitSignup(submitData)
+        
+        // 如果已存在报名表，使用更新接口；否则使用创建接口
+        if (this.isEdit) {
+          await updateSignup(submitData)
+        } else {
+          await submitSignup(submitData)
+          this.isEdit = true
+        }
         submitSuccess = true
       } catch (err) {
         console.error('提交报名失败:', err)
@@ -333,7 +468,21 @@ export default {
         if (errorMsg.includes('invalid url') || errorMsg.includes('600009')) {
           submitSuccess = true
           console.log('开发阶段：API未配置，模拟提交成功')
+          this.isEdit = true
         } else {
+          // 检查是否是字符长度错误
+          if (errorMsg.includes('500') || errorMsg.includes('字符')) {
+            uni.showToast({
+              title: '个人简介不能超过500个字符',
+              icon: 'none'
+            })
+          } else {
+            // 显示其他错误信息
+            uni.showToast({
+              title: errorMsg || '提交失败，请重试',
+              icon: 'none'
+            })
+          }
           // 其他错误才真正失败
           this.submitting = false
           return
@@ -400,6 +549,66 @@ export default {
     goToMatch() {
       uni.switchTab({
         url: '/pages/multiple-match/index'
+      })
+    },
+    async handleCancel() {
+      uni.showModal({
+        title: '确认取消',
+        content: '确定要取消报名吗？取消后需要重新报名才能参与匹配。',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
+              await cancelSignup()
+              uni.showToast({
+                title: '已取消报名',
+                icon: 'success'
+              })
+              
+              // 重置表单数据
+              this.formData = {
+                avatar: '',
+                name: '',
+                gender: '',
+                degree: '',
+                studentNo: '',
+                majorCategory: '',
+                college: '',
+                qq: '',
+                bio: ''
+              }
+              this.isEdit = false
+              
+            } catch (error) {
+              console.error('取消报名失败:', error)
+              
+              // 开发阶段：如果是无效URL错误，模拟成功
+              if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+                console.log('开发阶段：API未配置，模拟取消成功')
+                uni.showToast({
+                  title: '已取消报名',
+                  icon: 'success'
+                })
+                this.formData = {
+                  avatar: '',
+                  name: '',
+                  gender: '',
+                  degree: '',
+                  studentNo: '',
+                  majorCategory: '',
+                  college: '',
+                  qq: '',
+                  bio: ''
+                }
+                this.isEdit = false
+              } else {
+                uni.showToast({
+                  title: error.message || '取消失败，请重试',
+                  icon: 'none'
+                })
+              }
+            }
+          }
+        }
       })
     }
   }
@@ -577,7 +786,27 @@ export default {
   top: 180rpx;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   width: 622rpx;
+}
+
+.header-buttons {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.cancel-btn {
+  width: 130rpx;
+  height: 64rpx;
+  background: #FFFFFF;
+  border: 2rpx solid #1F2635;
+  border-radius: 90rpx;
+  color: #1F2635;
+  font-size: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .info-title-row {
@@ -724,6 +953,27 @@ export default {
 .form-row:nth-child(7) .form-label {
   width: 128rpx;
   color: #1F2635;
+}
+
+/* 个人简介输入框包装器 */
+.bio-input-wrapper {
+  position: relative;
+  width: 474rpx;
+}
+
+.bio-input-wrapper .form-input-field {
+  position: relative;
+  padding-right: 100rpx; /* 为字符计数留出空间 */
+}
+
+.char-count {
+  position: absolute;
+  right: 32rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 20rpx;
+  color: #9094A6;
+  pointer-events: none;
 }
 
 /* 通用输入框样式 */

@@ -6,7 +6,7 @@ class Task(models.Model):
     打卡任务模型
     """
     title = models.CharField(max_length=50, blank=True, verbose_name="任务名")
-    cover = models.ImageField(upload_to=r"task\cover", verbose_name="封面")
+    cover = models.ImageField(upload_to=r"task\cover", verbose_name="封面", blank=True, null=True)
     introduction = models.TextField(blank=True, verbose_name="任务描述")
     score = models.IntegerField(blank=True, default=100, verbose_name="任务分数")
 

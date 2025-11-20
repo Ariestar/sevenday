@@ -27,6 +27,7 @@ class PostSerializer(serializers.ModelSerializer):
 
 class PostCreateSerializer(serializers.ModelSerializer):
     """创建打卡记录序列化器"""
+    is_published = serializers.BooleanField(required=False, default=False)
     
     class Meta:
         model = Post
@@ -35,6 +36,7 @@ class PostCreateSerializer(serializers.ModelSerializer):
             "description",
             "photo",
             "task",
+            "is_published",
         ]
     
     def validate_title(self, value):

@@ -103,24 +103,66 @@ class UserView(
     @action(methods=["post"], detail=False, url_path="upload-avatar")
     def upload_avatar(self, request):
         """上传头像"""
-        if 'avatar' not in request.FILES:
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        # 调试：打印所有接收到的文件字段
+        logger.info(f"接收到的 FILES: {list(request.FILES.keys())}")
+        logger.info(f"接收到的 POST data: {request.POST}")
+        logger.info(f"请求方法: {request.method}")
+        logger.info(f"请求路径: {request.path}")
+        
+        # 兼容多种字段名：avatar、file、photo（前端可能使用不同的字段名）
+        avatar_file = request.FILES.get('avatar') or request.FILES.get('file') or request.FILES.get('photo')
+        if not avatar_file:
+            logger.error(f"未找到文件，可用的FILES键: {list(request.FILES.keys())}")
             raise ApiException(
                 ResponseType.ParamValidationFailed,
                 msg="请上传头像文件",
             )
         
+        logger.info(f"用户 {request.user.id} 上传头像，文件名: {avatar_file.name}, 大小: {avatar_file.size} bytes")
+        
         user = request.user
         serializer = self.get_serializer(
             user,
-            data={'avatar': request.FILES['avatar']},
+            data={'avatar': avatar_file},
             partial=True
         )
         serializer.is_valid(raise_exception=True)
         serializer.save()
         
+        # 重新序列化以获取最新的avatar URL
+        updated_serializer = self.get_serializer(user)
+        avatar_url = updated_serializer.data.get('avatar', '')
+        
+        logger.info(f"序列化后的avatar值: {avatar_url}")
+        
+        # 处理avatar URL：如果是相对路径，构建完整URL
+        if avatar_url:
+            if isinstance(avatar_url, str) and not avatar_url.startswith('http'):
+                # 如果是相对路径，构建完整URL
+                try:
+                    avatar_url = request.build_absolute_uri(avatar_url)
+                except Exception as e:
+                    logger.error(f"构建完整URL失败: {e}")
+                    # 如果构建失败，尝试手动拼接
+                    if avatar_url.startswith('/'):
+                        avatar_url = f"{request.scheme}://{request.get_host()}{avatar_url}"
+                    else:
+                        avatar_url = f"{request.scheme}://{request.get_host()}/media/{avatar_url}"
+        else:
+            # 如果avatar_url为空，使用默认头像
+            avatar_url = request.build_absolute_uri('/media/avatar/default.jpg')
+        
+        logger.info(f"最终返回的avatar URL: {avatar_url}")
+        
         return Response({
+            "code": "00000",
             "msg": "头像上传成功",
-            "avatar": serializer.data['avatar']
+            "data": {
+                "url": avatar_url
+            }
         })
 
     @action(methods=["get"], detail=False, url_path="list-all", permission_classes=[IsAdminUser])

@@ -25,10 +25,14 @@ urlpatterns = [
     path("academies/", include("academies.urls")),  # 院系
     path("applications/", include("applications.urls")),  # 报名表
     path("signup/", include("applications.urls")),  # 报名表（前端使用别名）
+    path("match/", include("applications.urls")),  # 匹配接口（前端使用）
     path("posts/", include("posts.urls")),  # 打卡表
+    path("api/checkin/", include("posts.urls")),  # 打卡接口（前端使用）
+    path("api/square/", include("posts.urls")),  # 广场接口（前端使用）
     path("tasks/", include("tasks.urls")),  # 打卡任务
     path("teams/", include("teams.urls")),  # 队伍
     path("users/", include("users.urls")),  # 用户
+    path("upload/", include("users.urls")),  # 上传接口（头像和打卡图片，通过不同的子路径区分）
     # 健康检查与元信息（便于前端/运维探活与环境判断）
     path("health/", lambda request: JsonResponse({"status": "ok"})),
     path("meta/", lambda request: JsonResponse({
@@ -49,3 +53,5 @@ urlpatterns = [
             name="redoc",
     ),  # redoc接口文档
 ]
+
+

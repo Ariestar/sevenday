@@ -25,7 +25,13 @@
           <!-- 头像区域 -->
           <view class="avatar-section">
             <view class="avatar-circle">
-              <view class="avatar-icon"></view>
+              <image 
+                v-if="teammateInfo.avatar" 
+                :src="teammateInfo.avatar" 
+                class="avatar-image" 
+                mode="aspectFill"
+              />
+              <view v-else class="avatar-icon"></view>
             </view>
           </view>
           
@@ -48,6 +54,38 @@
             <view class="star-decorations">
               <image class="star-left" src="/static/checkin/star.png" mode="aspectFit"></image>
               <image class="star-right" src="/static/checkin/star.png" mode="aspectFit"></image>
+            </view>
+          </view>
+          
+          <!-- 基本信息字段列表 -->
+          <view class="info-fields">
+            <view class="info-field-item">
+              <text class="info-field-label">姓名</text>
+              <text class="info-field-value">{{ teammateInfo.username || '未填写' }}</text>
+            </view>
+            <view class="info-field-item">
+              <text class="info-field-label">性别</text>
+              <text class="info-field-value">{{ teammateInfo.gender || '未填写' }}</text>
+            </view>
+            <view class="info-field-item">
+              <text class="info-field-label">身份</text>
+              <text class="info-field-value">{{ teammateInfo.education || '未填写' }}</text>
+            </view>
+            <view class="info-field-item">
+              <text class="info-field-label">大类</text>
+              <text class="info-field-value">{{ teammateInfo.majorCategory || '未填写' }}</text>
+            </view>
+            <view class="info-field-item">
+              <text class="info-field-label">院系</text>
+              <text class="info-field-value">{{ teammateInfo.college || '未填写' }}</text>
+            </view>
+            <view class="info-field-item">
+              <text class="info-field-label">联系方式</text>
+              <text class="info-field-value">{{ teammateInfo.contact || '未填写' }}</text>
+            </view>
+            <view class="info-field-item">
+              <text class="info-field-label">其他信息</text>
+              <text class="info-field-value">{{ teammateInfo.bio || '未填写' }}</text>
             </view>
           </view>
         </view>
@@ -158,14 +196,14 @@
           <text class="modal-title">申请换队友</text>
         </view>
         <view class="modal-content">
-          <text class="modal-text">确定要申请换队友吗？此操作会通知管理员处理。</text>
+          <text class="modal-text">确定要申请换队友吗？</text>
         </view>
         <view class="modal-actions">
           <view class="modal-button cancel" @tap="closeExchangeConfirmModal">
             <text class="button-text">取消</text>
           </view>
           <view class="modal-button confirm" @tap="confirmExchangeRequest">
-            <text class="button-text">确定</text>
+            <text class="button-text">是</text>
           </view>
         </view>
       </view>
@@ -179,7 +217,6 @@
         </view>
         <view class="waiting-content">
           <text class="waiting-title">等待对方回应</text>
-          <text class="waiting-subtitle">已向管理员发送换队友申请</text>
         </view>
         <view class="waiting-actions">
           <view class="waiting-button" @tap="cancelExchangeRequest">
@@ -205,11 +242,34 @@
         </view>
       </view>
     </view>
+
+    <!-- 收到换队友申请弹窗 -->
+    <view v-if="showReceivedExchangeModal" class="modal-overlay" @tap.stop>
+      <view class="received-exchange-modal" @tap.stop>
+        <view class="modal-header">
+          <text class="modal-title">换队友申请</text>
+        </view>
+        <view class="modal-content">
+          <text class="modal-text">您的队友发起了更换队友申请</text>
+          <text class="modal-text">是否同意更换队友?</text>
+        </view>
+        <view class="modal-actions">
+          <view class="modal-button agree" @tap="handleAgreeExchange">
+            <text class="button-text">同意</text>
+          </view>
+          <view class="modal-button disagree" @tap="handleDisagreeExchange">
+            <text class="button-text">不同意</text>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script>
 import CustomTabBar from '@/components/CustomTabBar.vue'
+import { getMatchList, requestExchangeTeammate, getExchangeRequest, respondExchangeRequest } from '../../services/match'
+import { getMyCheckinList, getCheckinTasks } from '../../services/checkin'
 
 export default {
   components: {
@@ -221,42 +281,52 @@ export default {
       showExchangeConfirmModal: false,
       showWaitingModal: false,
       showResultModal: false,
+      showReceivedExchangeModal: false,
+      exchangeRequestId: null,
+      checkExchangeInterval: null,
       exchangeResult: {
         title: '',
         message: ''
       },
-      teamStats: {
-        days: 2,
-        completedTasks: 5,
-        credits: 12
+      teammateInfo: {
+        id: null,
+        username: '',
+        avatar: '',
+        gender: '',
+        education: '',
+        majorCategory: '',
+        college: '',
+        contact: '',
+        bio: ''
       },
-      checkinRecords: [
-        {
-          day: 1,
-          status: 'completed-checked',
-          completedTime: '今日14:05完成',
-          expanded: false,
-          details: '今日完成晨跑30分钟，上传了运动照片和心得体会。'
-        },
-        {
-          day: 2,
-          status: 'pending',
-          completedTime: null,
-          expanded: false,
-          details: '等待提交打卡内容。'
-        },
-        {
-          day: 3,
-          status: 'not-started',
-          completedTime: null,
-          expanded: false,
-          details: '任务尚未开始。'
-        }
-      ]
+      teamStats: {
+        days: 0,
+        completedTasks: 0,
+        credits: 0
+      },
+      checkinRecords: []
     }
   },
   onLoad() {
     this.loadTeammateData()
+    this.loadTeamStats()
+    this.loadCheckinRecords()
+    this.checkExchangeRequest()
+    // 定期检查换队友申请
+    this.checkExchangeInterval = setInterval(() => {
+      this.checkExchangeRequest()
+    }, 3000) // 每3秒检查一次
+  },
+  async onShow() {
+    // 页面显示时刷新数据
+    await this.loadTeamStats()
+    await this.loadCheckinRecords()
+  },
+  onUnload() {
+    // 清除定时器
+    if (this.checkExchangeInterval) {
+      clearInterval(this.checkExchangeInterval)
+    }
   },
   methods: {
     toggleDropdown() {
@@ -297,46 +367,140 @@ export default {
       this.showExchangeConfirmModal = false
     },
 
-    confirmExchangeRequest() {
-      this.showExchangeConfirmModal = false
-      this.showWaitingModal = true
+    async confirmExchangeRequest() {
+      try {
+        this.showExchangeConfirmModal = false
+        uni.showLoading({ title: '发送中...' })
+        
+        // 调用API发送换队友申请
+        await requestExchangeTeammate()
+        
+        uni.hideLoading()
+        this.showWaitingModal = true
+        
+        // 开始轮询检查申请状态
+        this.startPollingExchangeStatus()
+      } catch (error) {
+        uni.hideLoading()
+        console.error('发送换队友申请失败:', error)
+        uni.showToast({
+          title: error.message || '发送失败，请重试',
+          icon: 'none'
+        })
+      }
+    },
+    
+    async startPollingExchangeStatus() {
+      // 每3秒检查一次申请状态
+      const pollInterval = setInterval(async () => {
+        try {
+          const result = await getMatchList()
+          const matchList = result?.data || result
+          
+          // 如果队伍已解散，说明对方同意了
+          if (!matchList?.isMatched) {
+            clearInterval(pollInterval)
+            this.showWaitingModal = false
+            this.exchangeResult = {
+              title: '换队友成功',
+              message: '对方已同意换队友申请，队伍已解散。'
+            }
+            this.showResultModal = true
+          }
+        } catch (error) {
+          console.error('检查申请状态失败:', error)
+        }
+      }, 3000)
       
-      // 模拟等待对方回应的过程（实际项目中这里应该调用API）
-      this.simulateExchangeResponse()
+      // 30秒后停止轮询
+      setTimeout(() => {
+        clearInterval(pollInterval)
+      }, 30000)
     },
 
     cancelExchangeRequest() {
       this.showWaitingModal = false
+      // 注意：这里只是取消等待弹窗，实际的申请仍然有效
+      // 如果需要真正取消申请，需要调用API删除申请
       uni.showToast({
-        title: '已取消申请',
+        title: '已关闭等待窗口',
         icon: 'none'
       })
     },
 
-    simulateExchangeResponse() {
-      // 模拟4秒后收到对方回应
-      setTimeout(() => {
-        this.showWaitingModal = false
+    async checkExchangeRequest() {
+      try {
+        const result = await getExchangeRequest()
+        const data = result?.data || result
         
-        // 随机模拟对方同意或拒绝（实际项目中这里应该是真实的服务器响应）
-        const isAccepted = Math.random() > 0.5
-        
-        if (isAccepted) {
-          // 对方同意换队友
-          this.exchangeResult = {
-            title: '换队友成功',
-            message: '对方已同意换队友申请，队伍已解散。'
-          }
-        } else {
-          // 对方拒绝换队友
-          this.exchangeResult = {
-            title: '对方已拒绝更换队友申请！',
-            message: '对方拒绝了换队友申请，将继续保持当前组队。'
-          }
+        if (data?.hasRequest && data?.request) {
+          this.exchangeRequestId = data.request.id
+          this.showReceivedExchangeModal = true
         }
+      } catch (error) {
+        console.error('检查换队友申请失败:', error)
+      }
+    },
+    
+    async handleAgreeExchange() {
+      try {
+        uni.showLoading({ title: '处理中...' })
         
-        this.showResultModal = true
-      }, 4000)
+        await respondExchangeRequest(this.exchangeRequestId, true)
+        
+        uni.hideLoading()
+        this.showReceivedExchangeModal = false
+        
+        // 清除本地存储
+        uni.removeStorageSync('hasTeam')
+        uni.removeStorageSync('teamName')
+        uni.removeStorageSync('justCreatedTeam')
+        uni.removeStorageSync('teammates')
+        
+        // 跳转到匹配页面
+        uni.reLaunch({
+          url: '/pages/multiple-match/index',
+          success: () => {
+            uni.showToast({
+              title: '队伍已解散，可重新匹配',
+              icon: 'none'
+            })
+          }
+        })
+      } catch (error) {
+        uni.hideLoading()
+        console.error('同意换队友失败:', error)
+        uni.showToast({
+          title: error.message || '处理失败，请重试',
+          icon: 'none'
+        })
+      }
+    },
+    
+    async handleDisagreeExchange() {
+      try {
+        uni.showLoading({ title: '处理中...' })
+        
+        await respondExchangeRequest(this.exchangeRequestId, false)
+        
+        uni.hideLoading()
+        this.showReceivedExchangeModal = false
+        
+        uni.showToast({
+          title: '已拒绝换队友申请',
+          icon: 'success'
+        })
+        
+        // 清除申请ID，避免重复显示
+        this.exchangeRequestId = null
+      } catch (error) {
+        uni.hideLoading()
+        console.error('拒绝换队友失败:', error)
+        uni.showToast({
+          title: error.message || '处理失败，请重试',
+          icon: 'none'
+        })
+      }
     },
 
     closeResultModal() {
@@ -352,6 +516,7 @@ export default {
         uni.removeStorageSync('hasTeam')
         uni.removeStorageSync('teamName')
         uni.removeStorageSync('justCreatedTeam')
+        uni.removeStorageSync('teammates')
         
         // 跳转到多人匹配页面，保留报名信息
         uni.reLaunch({
@@ -363,8 +528,15 @@ export default {
             })
           }
         })
+      } else if (this.exchangeResult.message.includes('拒绝')) {
+        // 如果拒绝，显示提示信息
+        uni.showToast({
+          title: '已维持当前组队，有问题请联系工作人员',
+          icon: 'none',
+          duration: 3000
+        })
       }
-      // 如果拒绝，则保持当前页面，不做任何操作
+      // 其他情况保持当前页面
     },
     
     toggleRecord(index) {
@@ -400,9 +572,298 @@ export default {
       }
     },
     
-    loadTeammateData() {
-      // TODO: 从接口加载队友数据和打卡记录
-      console.log('加载队友数据')
+    async loadTeammateData() {
+      try {
+        console.log('🔍 开始加载队友数据...')
+        
+        // 先从本地存储读取
+        const teammatesFromStorage = uni.getStorageSync('teammates')
+        if (teammatesFromStorage && teammatesFromStorage.length > 0) {
+          console.log('从本地存储读取队友信息:', teammatesFromStorage)
+          const teammate = teammatesFromStorage[0] // 取第一个队友
+          this.updateTeammateInfo(teammate)
+        }
+        
+        // 调用API获取最新的队友信息
+        const result = await getMatchList()
+        console.log('获取队友数据 (完整):', JSON.stringify(result, null, 2))
+        
+        // 处理不同的响应格式
+        let matchList = null
+        if (result && result.data) {
+          matchList = result.data
+          console.log('从result.data提取数据:', matchList)
+        } else if (result && typeof result.isMatched !== 'undefined') {
+          matchList = result
+          console.log('result本身就是data:', matchList)
+        }
+        
+        if (matchList && matchList.isMatched && matchList.matches && matchList.matches.length > 0) {
+          console.log('✅ 找到队友信息:', matchList.matches)
+          const teammate = matchList.matches[0] // 取第一个队友
+          this.updateTeammateInfo(teammate)
+          
+          // 保存到本地存储
+          uni.setStorageSync('teammates', matchList.matches)
+        } else {
+          console.warn('⚠️ 未找到队友信息')
+          // 如果API没有返回队友信息，尝试使用本地存储
+          if (teammatesFromStorage && teammatesFromStorage.length > 0) {
+            const teammate = teammatesFromStorage[0]
+            this.updateTeammateInfo(teammate)
+          }
+        }
+      } catch (error) {
+        console.error('加载队友数据失败:', error)
+        
+        // 如果API调用失败，尝试使用本地存储
+        const teammatesFromStorage = uni.getStorageSync('teammates')
+        if (teammatesFromStorage && teammatesFromStorage.length > 0) {
+          console.log('API失败，使用本地存储的队友信息')
+          const teammate = teammatesFromStorage[0]
+          this.updateTeammateInfo(teammate)
+        }
+      }
+    },
+    
+    updateTeammateInfo(teammate) {
+      if (!teammate) {
+        console.warn('⚠️ teammate为空，无法更新')
+        return
+      }
+      
+      console.log('📝 ========== 处理队友数据 ==========')
+      console.log('📝 完整teammate对象:', JSON.stringify(teammate, null, 2))
+      console.log('📝 原始gender值:', teammate.gender, '类型:', typeof teammate.gender)
+      console.log('📝 原始grade值:', teammate.grade, '类型:', typeof teammate.grade)
+      
+      // 处理性别：前端直接转换
+      let gender = ''
+      const genderValue = teammate.gender
+      if (genderValue !== null && genderValue !== undefined && genderValue !== '') {
+        // 转换为数字进行比较
+        const genderNum = Number(genderValue)
+        if (genderNum === 1 || genderValue === '1' || genderValue === 1) {
+          gender = '男'
+        } else if (genderNum === 2 || genderValue === '2' || genderValue === 2) {
+          gender = '女'
+        } else if (genderValue === '男' || genderValue === '女') {
+          // 如果已经是中文，直接使用
+          gender = genderValue
+        }
+      }
+      
+      // 处理联系方式：优先显示QQ，如果没有则显示手机号
+      let contact = ''
+      if (teammate.qq && teammate.qq.trim()) {
+        contact = `QQ: ${teammate.qq}`
+      } else if (teammate.phone && teammate.phone.trim()) {
+        contact = `手机: ${teammate.phone}`
+      }
+      
+      // 处理身份（学历）：前端从年级推断
+      const education = this.getEducationFromGrade(teammate.grade)
+      
+      this.teammateInfo = {
+        id: teammate.id,
+        username: teammate.username || teammate.name || '未知',
+        avatar: teammate.avatar || '',
+        gender: gender,
+        education: education,
+        majorCategory: teammate.major_category || teammate.majorCategory || '',
+        college: teammate.academy?.name || teammate.academy_name || teammate.college || '',
+        contact: contact,
+        bio: teammate.interest || teammate.bio || ''
+      }
+      
+      console.log('✅ ========== 队友信息已更新 ==========')
+      console.log('✅ 最终teammateInfo:', JSON.stringify(this.teammateInfo, null, 2))
+      console.log('✅ 性别:', this.teammateInfo.gender, '(是否为空:', !this.teammateInfo.gender, ')')
+      console.log('✅ 身份:', this.teammateInfo.education, '(是否为空:', !this.teammateInfo.education, ')')
+      console.log('✅ ====================================')
+    },
+    
+    getEducationFromGrade(grade) {
+      if (grade === null || grade === undefined || grade === '') {
+        console.log('⚠️ grade为空，无法推断学历')
+        return ''
+      }
+      const gradeNum = Number(grade)
+      if (isNaN(gradeNum)) {
+        console.log('⚠️ grade不是有效数字:', grade)
+        return ''
+      }
+      const result = gradeNum <= 4 ? '本科' : (gradeNum <= 6 ? '研究生' : '')
+      console.log('📚 从年级推断学历:', gradeNum, '->', result)
+      return result
+    },
+    
+    async loadTeamStats() {
+      try {
+        console.log('📊 开始加载团队统计数据...')
+        
+        // 获取匹配列表，包含团队信息
+        const result = await getMatchList()
+        const matchList = result?.data || result
+        
+        if (matchList && matchList.team) {
+          const team = matchList.team
+          
+          // 获取已完成任务数：从打卡记录中统计
+          let completedTasks = 0
+          try {
+            const checkinList = await getMyCheckinList()
+            if (checkinList && Array.isArray(checkinList)) {
+              completedTasks = checkinList.length
+            }
+          } catch (err) {
+            console.warn('获取打卡记录失败，使用默认值:', err)
+          }
+          
+          // 获取积分：从team.score或计算
+          const credits = team.score || 0
+          
+          // 计算组队天数：从第一个打卡记录的时间开始计算
+          let days = 0
+          try {
+            const checkinList = await getMyCheckinList()
+            if (checkinList && checkinList.length > 0) {
+              // 找到最早的打卡记录
+              const earliestPost = checkinList[checkinList.length - 1] // 列表是倒序的，最后一个是最早的
+              if (earliestPost && earliestPost.create_time) {
+                const createTime = new Date(earliestPost.create_time)
+                const now = new Date()
+                const diffTime = now - createTime
+                days = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 1 // 加1是因为当天也算一天
+                if (days < 1) days = 1 // 至少是1天
+              }
+            }
+            // 如果没有打卡记录，默认显示1天
+            if (days === 0) days = 1
+          } catch (err) {
+            console.warn('计算组队天数失败，使用默认值:', err)
+            days = 1
+          }
+          
+          this.teamStats = {
+            days: days,
+            completedTasks: completedTasks,
+            credits: credits
+          }
+          
+          console.log('✅ 团队统计数据已加载:', this.teamStats)
+        } else {
+          console.warn('⚠️ 未找到团队信息')
+          // 使用默认值
+          this.teamStats = {
+            days: 0,
+            completedTasks: 0,
+            credits: 0
+          }
+        }
+      } catch (error) {
+        console.error('加载团队统计数据失败:', error)
+        // 使用默认值
+        this.teamStats = {
+          days: 0,
+          completedTasks: 0,
+          credits: 0
+        }
+      }
+    },
+    
+    async loadCheckinRecords() {
+      try {
+        console.log('📝 开始加载打卡记录...')
+        
+        // 获取我的打卡记录列表
+        const checkinList = await getMyCheckinList()
+        console.log('📝 打卡记录列表:', checkinList)
+        
+        if (!checkinList || checkinList.length === 0) {
+          this.checkinRecords = []
+          console.log('⚠️ 暂无打卡记录')
+          return
+        }
+        
+        // 获取所有任务列表，用于匹配day
+        const tasks = await getCheckinTasks().catch(() => [])
+        const taskMap = {}
+        if (tasks && Array.isArray(tasks)) {
+          tasks.forEach((task, index) => {
+            // 支持多种ID字段名
+            const taskId = task.id || task.taskId || task.task_id
+            if (taskId) {
+              taskMap[taskId] = task.day || (index + 1) // 优先使用task.day，否则使用索引+1
+            }
+          })
+        }
+        
+        console.log('📋 任务映射表:', taskMap)
+        
+        // 转换打卡记录格式
+        const records = checkinList.map(post => {
+          // post.task 可能是任务ID（整数）或任务对象
+          let taskId = null
+          if (typeof post.task === 'object' && post.task !== null) {
+            taskId = post.task.id || post.task.taskId || post.task.task_id
+          } else {
+            taskId = post.task
+          }
+          
+          // 从映射表中获取day，如果没有则尝试从title中提取
+          let day = taskMap[taskId] || 0
+          if (day === 0 && post.title) {
+            // 从title中提取天数，例如"第1天打卡"
+            const match = post.title.match(/第(\d+)天/)
+            if (match) {
+              day = parseInt(match[1])
+            }
+          }
+          
+          console.log(`📝 处理打卡记录: taskId=${taskId}, day=${day}`, post)
+          const createTime = post.create_time ? new Date(post.create_time) : null
+          
+          // 格式化完成时间
+          let completedTime = null
+          if (createTime) {
+            const now = new Date()
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+            const postDate = new Date(createTime.getFullYear(), createTime.getMonth(), createTime.getDate())
+            
+            if (postDate.getTime() === today.getTime()) {
+              // 今天完成的
+              const hours = createTime.getHours().toString().padStart(2, '0')
+              const minutes = createTime.getMinutes().toString().padStart(2, '0')
+              completedTime = `今日${hours}:${minutes}完成`
+            } else {
+              // 之前完成的
+              const month = (createTime.getMonth() + 1).toString().padStart(2, '0')
+              const date = createTime.getDate().toString().padStart(2, '0')
+              const hours = createTime.getHours().toString().padStart(2, '0')
+              const minutes = createTime.getMinutes().toString().padStart(2, '0')
+              completedTime = `${month}-${date} ${hours}:${minutes}完成`
+            }
+          }
+          
+          return {
+            day: day,
+            status: 'completed-checked', // 已完成的打卡
+            completedTime: completedTime,
+            expanded: false,
+            details: post.description || post.title || '已完成打卡'
+          }
+        })
+        
+        // 按day排序
+        records.sort((a, b) => a.day - b.day)
+        
+        this.checkinRecords = records
+        console.log('✅ 打卡记录已加载:', this.checkinRecords)
+      } catch (error) {
+        console.error('加载打卡记录失败:', error)
+        this.checkinRecords = []
+      }
     }
   }
 }
@@ -479,11 +940,12 @@ export default {
 .profile-card {
   position: relative;
   width: 676rpx; /* 对应338px */
-  height: 420rpx; /* 对应210px */
+  min-height: 420rpx; /* 对应210px，改为min-height以适应内容 */
   margin: 0 auto 40rpx; /* 对应0 auto 20px */
   background: #FFFFFF;
   border-radius: 24rpx; /* 对应12px */
   padding: 40rpx; /* 对应20px */
+  box-sizing: border-box;
 }
 
 /* 统计信息容器 */
@@ -565,6 +1027,13 @@ export default {
   transform: translateX(-50%);
 }
 
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
 /* 基本信息区域 */
 .info-section {
   position: relative;
@@ -586,6 +1055,46 @@ export default {
   font-size: 28rpx; /* 对应14px */
   line-height: 34rpx; /* 对应17px */
   color: #A100FE;
+}
+
+/* 基本信息字段列表 */
+.info-fields {
+  width: 100%;
+  margin-top: 30rpx; /* 对应15px */
+  padding: 0 20rpx; /* 对应0 10px */
+}
+
+.info-field-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20rpx 0; /* 对应10px 0 */
+  border-bottom: 1rpx solid #F0F0F0; /* 对应0.5px */
+}
+
+.info-field-item:last-child {
+  border-bottom: none;
+}
+
+.info-field-label {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 28rpx; /* 对应14px */
+  line-height: 34rpx; /* 对应17px */
+  color: #666666;
+  flex-shrink: 0;
+  margin-right: 20rpx; /* 对应10px */
+}
+
+.info-field-value {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 28rpx; /* 对应14px */
+  line-height: 34rpx; /* 对应17px */
+  color: #000000;
+  text-align: right;
+  flex: 1;
+  word-break: break-all;
 }
 
 .exchange-button {
@@ -1171,6 +1680,68 @@ export default {
 }
 
 .result-button-text {
+  font-family: 'Inter';
+  font-weight: 600;
+  font-size: 32rpx; /* 对应16px */
+  line-height: 40rpx; /* 对应20px */
+  color: #FFFFFF;
+}
+
+/* 收到换队友申请弹窗样式 */
+.received-exchange-modal {
+  width: 600rpx; /* 对应300px */
+  background: #FFFFFF;
+  border-radius: 24rpx; /* 对应12px */
+  padding: 0;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.15);
+}
+
+.received-exchange-modal .modal-header {
+  padding: 50rpx 40rpx 30rpx;
+  text-align: center;
+}
+
+.received-exchange-modal .modal-content {
+  padding: 0 40rpx 40rpx;
+  text-align: center;
+}
+
+.received-exchange-modal .modal-text {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 30rpx; /* 对应15px */
+  line-height: 40rpx; /* 对应20px */
+  color: #000000;
+  display: block;
+  margin-bottom: 10rpx;
+}
+
+.received-exchange-modal .modal-actions {
+  display: flex;
+  border-top: 1rpx solid #E8E8E8;
+}
+
+.received-exchange-modal .modal-button {
+  flex: 1;
+  height: 100rpx; /* 对应50px */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.received-exchange-modal .modal-button.agree {
+  background: #00BA32;
+  border-radius: 0 0 0 24rpx;
+}
+
+.received-exchange-modal .modal-button.disagree {
+  background: #FF5A5A;
+  border-radius: 0 0 24rpx 0;
+  border-left: 1rpx solid #E8E8E8;
+}
+
+.received-exchange-modal .modal-button .button-text {
   font-family: 'Inter';
   font-weight: 600;
   font-size: 32rpx; /* 对应16px */

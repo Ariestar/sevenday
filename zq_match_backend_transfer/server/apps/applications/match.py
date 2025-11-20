@@ -25,7 +25,7 @@ def _get_today_attempts(user: User) -> int:
 
 def _score_pair(me: Application, other: Application) -> int:
     """
-    加权评分：按图片机制近似实现（院系互选、性别偏好、同院系、年级差、未匹配）
+    加权评分：按图片机制近似实现（院系互选、性别偏好、身份匹配、大类匹配、学院匹配、同院系、年级差）
     返回分数越高越优
     """
     score = 0
@@ -50,6 +50,54 @@ def _score_pair(me: Application, other: Application) -> int:
         else:
             return -1
 
+    # 身份（学历）匹配
+    if me.degree_choice:
+        # 根据用户的年级推断学历：1-4年级为本科，5-6年级为研究生
+        other_grade = other.user.grade or 0
+        other_degree = '本科' if other_grade <= 4 else ('研究生' if other_grade <= 6 else '')
+        if other_degree and me.degree_choice == other_degree:
+            score += 12
+        elif me.degree_choice and other_degree and me.degree_choice != other_degree:
+            # 如果明确要求但不符合，可以降低分数但不直接拒绝
+            score -= 5
+    
+    if other.degree_choice:
+        me_grade = me.user.grade or 0
+        me_degree = '本科' if me_grade <= 4 else ('研究生' if me_grade <= 6 else '')
+        if me_degree and other.degree_choice == me_degree:
+            score += 12
+        elif other.degree_choice and me_degree and other.degree_choice != me_degree:
+            score -= 5
+
+    # 大类匹配
+    if me.major_category_choice:
+        other_major = getattr(other.user, 'major_category', '') or ''
+        if other_major and me.major_category_choice == other_major:
+            score += 10
+        elif me.major_category_choice and other_major and me.major_category_choice != other_major:
+            score -= 3
+    
+    if other.major_category_choice:
+        me_major = getattr(me.user, 'major_category', '') or ''
+        if me_major and other.major_category_choice == me_major:
+            score += 10
+        elif other.major_category_choice and me_major and other.major_category_choice != me_major:
+            score -= 3
+
+    # 学院匹配（期望学院）
+    if me.college_choice_id:
+        if other.my_academy_id == me.college_choice_id:
+            score += 15
+        elif other.my_academy_id:
+            # 如果期望学院但不符合，可以降低分数
+            score -= 2
+    
+    if other.college_choice_id:
+        if me.my_academy_id == other.college_choice_id:
+            score += 15
+        elif me.my_academy_id:
+            score -= 2
+
     # 同院系加分
     if me.my_academy_id and other.my_academy_id and me.my_academy_id == other.my_academy_id:
         score += 10
@@ -69,6 +117,51 @@ def _score_pair(me: Application, other: Application) -> int:
         pass
 
     return score
+
+
+def recommend_matches(user_id: int, limit: int = 10):
+    """
+    推荐匹配对象：返回候选列表（不直接组队）
+    规则：
+    - 过滤：未匹配、未曾匹配过、不是自己
+    - 评分：互选院系>单向院系>性别偏好>同院系>年级差
+    - 返回前N个候选，包含匹配分数和用户信息
+    """
+    try:
+        user = User.objects.select_related().get(id=user_id)
+    except User.DoesNotExist:
+        return []
+    
+    me = Application.objects.select_related('user', 'my_academy', 'college_choice').prefetch_related('academy_choice').filter(user=user).first()
+    if me is None or me.my_academy_id is None:
+        return []
+    
+    ex_people_ids = list(user.people.values_list('id', flat=True))
+    
+    # 候选集合：
+    candidates = (
+        Application.objects.select_related('user', 'my_academy')
+        .prefetch_related('academy_choice')
+        .filter(user__is_match=False)
+        .exclude(user_id__in=ex_people_ids + [user_id])
+    )
+    
+    # 计算得分并排序
+    scored_candidates = []
+    for other in candidates:
+        s = _score_pair(me, other)
+        if s >= 0:  # 只返回满足基本条件的候选
+            scored_candidates.append({
+                'application': other,
+                'user': other.user,
+                'score': s
+            })
+    
+    # 按分数降序排序，分数相同按报名表创建顺序
+    scored_candidates.sort(key=lambda x: (-x['score'], x['application'].id))
+    
+    # 返回前N个
+    return scored_candidates[:limit]
 
 
 @transaction.atomic

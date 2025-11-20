@@ -517,3 +517,74 @@ class UpdateUserInfoView(APIView):
         serializer.save()
         return Response(serializer.data)
 
+
+class WxLoginView(APIView):
+    """
+    微信登录视图（前端使用）
+    """
+    
+    def post(self, request):
+        """
+        微信登录
+        """
+        code = request.data.get('code')
+        
+        if not code:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="请提供code参数",
+            )
+        
+        try:
+            # 使用微信小程序登录获取openid
+            from server.business.wechat.wxa import get_openid
+            openid = get_openid(code)
+            
+            # 查找或创建用户
+            user, created = User.objects.get_or_create(
+                openid=openid,
+                defaults={
+                    'username': f'wx_user_{openid[:8]}',
+                    'is_authenticated': True,
+                }
+            )
+            
+            # 如果用户已存在但未激活，激活用户
+            if not created and not user.is_authenticated:
+                user.is_authenticated = True
+                user.save()
+            
+            # 生成JWT token
+            refresh = RefreshToken.for_user(user)
+            access = refresh.access_token
+            
+            # 返回token和用户信息
+            return Response({
+                'code': '00000',
+                'msg': '登录成功',
+                'data': {
+                    'token': str(access),
+                    'refresh': str(refresh),
+                    'userInfo': {
+                        'id': user.id,
+                        'username': user.username,
+                        'email': user.email,
+                        'is_authenticated': user.is_authenticated,
+                        'is_staff': user.is_staff,
+                    }
+                }
+            }, status=status.HTTP_200_OK)
+            
+        except ApiException:
+            raise
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"微信登录失败: {e}", exc_info=True)
+            raise ApiException(
+                ResponseType.ThirdLoginFailed,
+                msg="微信登录失败，请稍后重试",
+                detail=str(e),
+                record=True,
+            )
+

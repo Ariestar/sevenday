@@ -22,10 +22,10 @@
     <!-- 你的期望 / 智能匹配 / 确认组队 标签 -->
     <view class="progress-tab-section">
       <view class="progress-tab-group">
-        <view class="progress-tab-item">
+        <view class="progress-tab-item" @click="goToExpectation">
           <text class="progress-tab-text">你的期望</text>
         </view>
-        <view class="progress-tab-item">
+        <view class="progress-tab-item" @click="goToIntelligentMatch">
           <text class="progress-tab-text">智能匹配</text>
         </view>
         <view class="progress-tab-item active">
@@ -47,7 +47,8 @@
         <!-- 用户头像 -->
         <view class="avatar-section">
           <view class="avatar-circle">
-            <view class="avatar-icon"></view>
+            <image v-if="inviterInfo.avatar" :src="inviterInfo.avatar" class="avatar-image" mode="aspectFill"></image>
+            <view v-else class="avatar-icon"></view>
           </view>
         </view>
         
@@ -71,8 +72,8 @@
         </view>
         
         <!-- 个人简介 -->
-        <view class="bio-section">
-          <text class="bio-text">{{ inviterInfo.bio || '个人简介' }}</text>
+        <view class="bio-section" v-if="inviterInfo.bio">
+          <text class="bio-text">{{ inviterInfo.bio }}</text>
         </view>
       </view>
 
@@ -97,6 +98,14 @@
       </view>
     </view>
 
+    <!-- 组队成功弹窗 -->
+    <TeamCreatedModal
+      :visible="showTeamCreatedModal"
+      :teamName="currentTeamName"
+      @close="handleTeamCreatedClose"
+      @confirm="handleTeamCreatedConfirm"
+    />
+
     <!-- 底部导航栏 -->
     <CustomTabBar :current="0"></CustomTabBar>
   </view>
@@ -104,34 +113,128 @@
 
 <script>
 import CustomTabBar from '@/components/CustomTabBar.vue'
+import TeamCreatedModal from '@/components/TeamCreatedModal.vue'
+import { getInvitation, confirmMatch } from '../../services/match'
 
 export default {
   components: {
-    CustomTabBar
+    CustomTabBar,
+    TeamCreatedModal
   },
   data() {
     return {
+      invitationId: null,
       inviterInfo: {
+        id: null,
         name: 'xxxx',
+        username: '',
         gender: '性别',
         education: '身份',
         majorCategory: '大类',
         college: '院系',
-        bio: '个人简介'
-      }
+        bio: '个人简介',
+        avatar: ''
+      },
+      showTeamCreatedModal: false,
+      currentTeamName: '',
+      isTeamCreated: false  // 标记是否已经组队成功，避免重复加载邀请
     }
   },
   onLoad(options) {
-    // 从参数中获取邀请方信息
+    // 从参数中获取邀请方信息（兼容旧逻辑）
     if (options.inviterInfo) {
       try {
-        this.inviterInfo = JSON.parse(decodeURIComponent(options.inviterInfo))
+        const info = JSON.parse(decodeURIComponent(options.inviterInfo))
+        this.inviterInfo = { ...this.inviterInfo, ...info }
       } catch (e) {
         console.warn('解析邀请方信息失败:', e)
       }
     }
+    
+    // 从API加载邀请信息
+    this.loadInvitation()
   },
   methods: {
+    async loadInvitation() {
+      // 如果已经组队成功，不再加载邀请
+      if (this.isTeamCreated) {
+        console.log('已组队成功，跳过加载邀请')
+        return
+      }
+      
+      try {
+        // 处理不同的响应格式
+        const result = await getInvitation()
+        console.log('获取邀请信息:', result)
+        
+        // 处理不同的响应格式
+        let invitationData = null
+        if (result && result.data) {
+          invitationData = result.data
+        } else if (result && typeof result.hasInvitation !== 'undefined') {
+          invitationData = result
+        }
+        
+        if (invitationData && invitationData.hasInvitation && invitationData.invitation) {
+          const inviter = invitationData.invitation.inviter
+          this.invitationId = invitationData.invitation.id
+          
+          // 更新邀请方信息
+          this.inviterInfo = {
+            id: inviter.id,
+            name: inviter.username || inviter.name || '未知',
+            username: inviter.username || '',
+            gender: inviter.gender === 1 ? '男' : (inviter.gender === 2 ? '女' : ''),
+            education: this.getEducationFromGrade(inviter.grade),
+            majorCategory: inviter.majorCategory || inviter.major_category || '',
+            college: inviter.academy?.name || inviter.college || '',
+            bio: inviter.bio || inviter.interest || '',
+            avatar: inviter.avatar || ''
+          }
+        } else {
+          // 没有待处理的邀请，且不是组队成功后的情况，才提示并返回
+          if (!this.isTeamCreated) {
+            uni.showToast({
+              title: '暂无待处理的邀请',
+              icon: 'none',
+              duration: 2000
+            })
+            // 延迟返回，让用户看到提示
+            setTimeout(() => {
+              uni.navigateBack({
+                fail: () => {
+                  // 如果无法返回，跳转到组队匹配页面
+                  this.goToIntelligentMatch()
+                }
+              })
+            }, 2000)
+          }
+        }
+      } catch (error) {
+        console.error('加载邀请信息失败:', error)
+        
+        // 如果已经组队成功，忽略错误
+        if (this.isTeamCreated) {
+          return
+        }
+        
+        // 开发阶段：如果是无效URL错误，使用默认数据
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，使用默认数据')
+        } else {
+          uni.showToast({
+            title: error.message || '加载邀请失败',
+            icon: 'none'
+          })
+        }
+      }
+    },
+    
+    getEducationFromGrade(grade) {
+      if (!grade) return ''
+      return grade <= 4 ? '本科生' : (grade <= 6 ? '研究生' : '')
+    },
+    
     goToSignup() {
       uni.reLaunch({
         url: '/pages/signup/index',
@@ -139,6 +242,30 @@ export default {
           console.warn('跳转到报名页面失败:', err)
           uni.navigateTo({
             url: '/pages/signup/index'
+          })
+        }
+      })
+    },
+    
+    goToExpectation() {
+      // 跳转到单人匹配页面（填写期望）
+      uni.navigateTo({
+        url: '/pages/single-match/index',
+        fail: () => {
+          uni.reLaunch({
+            url: '/pages/single-match/index'
+          })
+        }
+      })
+    },
+    
+    goToIntelligentMatch() {
+      // 跳转到单人匹配结果页面（智能匹配）
+      uni.navigateTo({
+        url: '/pages/single-match-result/index',
+        fail: () => {
+          uni.reLaunch({
+            url: '/pages/single-match-result/index'
           })
         }
       })
@@ -168,36 +295,125 @@ export default {
       })
     },
     
-    confirmTeamRequest(agreed) {
-      // TODO: 实现组队请求确认逻辑
-      if (agreed) {
-        uni.showToast({
-          title: '已同意组队申请',
-          icon: 'success'
-        })
+    async confirmTeamRequest(agreed) {
+      try {
+        uni.showLoading({ title: agreed ? '组队中...' : '处理中...' })
         
-        // 先标记已组队状态
-        uni.setStorageSync('hasTeam', true)
-        uni.setStorageSync('justCreatedTeam', true)
+        if (agreed) {
+          // 同意邀请
+          const result = await confirmMatch({
+            invitationId: this.invitationId,
+            accept: true
+          })
+          
+          uni.hideLoading()
+          
+          console.log('组队成功:', result)
+          
+          // 标记已组队成功，避免后续再次加载邀请
+          this.isTeamCreated = true
+          
+          // 更新本地存储
+          uni.setStorageSync('hasTeam', true)
+          uni.setStorageSync('justCreatedTeam', true)
+          
+          // 检查后端返回的队名
+          const teamNameFromAPI = result?.data?.team?.name || result?.team?.name
+          if (teamNameFromAPI && teamNameFromAPI.trim()) {
+            // 如果后端已设置队名，使用该队名
+            this.currentTeamName = teamNameFromAPI
+            uni.setStorageSync('teamName', teamNameFromAPI)
+          } else {
+            // 如果后端未设置队名，不设置默认值，让用户有机会创建队名
+            // 清除可能存在的旧队名
+            this.currentTeamName = ''
+            uni.removeStorageSync('teamName')
+          }
+          
+          // 显示组队成功弹窗
+          this.showTeamCreatedModal = true
+        } else {
+          // 拒绝邀请
+          await confirmMatch({
+            invitationId: this.invitationId,
+            accept: false
+          })
+          
+          uni.hideLoading()
+          
+          uni.showToast({
+            title: '已拒绝组队申请',
+            icon: 'success',
+            duration: 2000
+          })
+          
+          // 延迟返回上一页，让用户看到提示
+          setTimeout(() => {
+            uni.navigateBack({
+              fail: () => {
+                // 如果无法返回，跳转到组队匹配页面
+                this.goToIntelligentMatch()
+              }
+            })
+          }, 2000)
+        }
+      } catch (error) {
+        uni.hideLoading()
+        console.error('处理邀请失败:', error)
         
-        // 跳转到打卡页面
-        setTimeout(() => {
+        // 开发阶段：如果是无效URL错误，模拟成功
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，模拟成功')
+          if (agreed) {
+            uni.setStorageSync('hasTeam', true)
+            uni.setStorageSync('justCreatedTeam', true)
+            // 不设置默认队名，让用户有机会创建队名
+            this.currentTeamName = ''
+            uni.removeStorageSync('teamName')
+            this.showTeamCreatedModal = true
+          } else {
+            uni.showToast({
+              title: '已拒绝组队申请',
+              icon: 'success'
+            })
+            setTimeout(() => {
+              this.goToIntelligentMatch()
+            }, 1500)
+          }
+        } else {
+          uni.showToast({
+            title: error.message || '操作失败，请重试',
+            icon: 'none'
+          })
+        }
+      }
+    },
+    
+    handleTeamCreatedClose() {
+      this.showTeamCreatedModal = false
+      // 跳转到队友信息页面
+      uni.navigateTo({
+        url: '/pages/teammate-info/index',
+        fail: () => {
+          // 如果跳转失败，跳转到打卡页面
           uni.reLaunch({
             url: '/pages/checkin-detail/index'
           })
-        }, 1500)
-      } else {
-        uni.showToast({
-          title: '已拒绝组队申请',
-          icon: 'none'
-        })
-        // 返回到匹配页面
-        setTimeout(() => {
-          uni.reLaunch({
-            url: '/pages/multiple-match/index'
+        }
+      })
+    },
+    
+    handleTeamCreatedConfirm() {
+      this.showTeamCreatedModal = false
+      // 跳转到打卡页面
+      uni.reLaunch({
+        url: '/pages/checkin-detail/index',
+        fail: () => {
+          uni.switchTab({
+            url: '/pages/checkin-detail/index'
           })
-        }, 1500)
-      }
+        }
+      })
     }
   }
 }
@@ -396,6 +612,12 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.avatar-image {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
 }
 
 .avatar-icon {

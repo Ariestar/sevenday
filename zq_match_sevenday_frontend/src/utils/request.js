@@ -78,17 +78,21 @@ export function request(url, options = {}) {
         const code = responseData?.code
         const isSuccess = code === 0 || code === '0' || code === '00000'
         
+        // 兼容 200 (成功) 和 201 (创建成功) 状态码
+        const isHttpSuccess = res.statusCode === 200 || res.statusCode === 201
+        
         console.log('🔍 判断详情:', {
           statusCode: res.statusCode,
           code: code,
           codeType: typeof code,
           isSuccess: isSuccess,
-          condition1: res.statusCode === 200,
+          isHttpSuccess: isHttpSuccess,
+          condition1: isHttpSuccess,
           condition2: isSuccess,
-          finalResult: res.statusCode === 200 && isSuccess
+          finalResult: isHttpSuccess && isSuccess
         })
         
-        if (res.statusCode === 200 && isSuccess) {
+        if (isHttpSuccess && isSuccess) {
           console.log('✅ 请求成功，返回数据:', responseData.data)
           resolve(responseData.data)
         } else if (res.statusCode === 401 || responseData?.code === 401 || responseData?.code === '401') {

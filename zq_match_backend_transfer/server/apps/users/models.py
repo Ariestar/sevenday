@@ -4,7 +4,7 @@ from django.db.models import SET_NULL
 from zq_django_util.utils.user.models import AbstractUser
 
 from academies.models import Academy
-from applications.models import Application
+# from applications.models import Application  # 避免循环导入，使用字符串引用
 from server.utils.choices import GenderType
 from teams.models import Team
 
@@ -49,6 +49,7 @@ class User(AbstractUser):
     )
     grade = models.IntegerField(default=0, verbose_name="年级")
     interest = models.TextField(max_length=500, default="", verbose_name="爱好")
+    major_category = models.CharField(max_length=50, default="", blank=True, verbose_name="专业大类")
 
     # 报名表 related_name = application_form
 

@@ -43,3 +43,10 @@ export function checkSignupStatus() {
   return get('/signup/status/')
 }
 
+/**
+ * 取消报名
+ */
+export function cancelSignup() {
+  return post('/signup/cancel/', {}, { showLoading: true, loadingText: '取消中...' })
+}
+

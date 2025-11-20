@@ -89,7 +89,7 @@
               class="like-icon-top" 
               mode="widthFix"
             />
-            <text class="like-count-top">{{ post.likeCount || 12 }}</text>
+            <text class="like-count-top">{{ post.likeCount || 0 }}</text>
           </view>
 
           <!-- 打卡内容区域 - 暂时隐藏 -->
@@ -163,8 +163,8 @@ export default {
   onLoad() {
     // 监听广场数据更新
     uni.$on('square-updated', this.handleSquareUpdate)
-    // 初始化模拟数据（如果没有本地数据）
-    this.initMockData()
+    // 加载真实数据
+    this.loadData()
   },
   onUnload() {
     // 移除事件监听
@@ -179,75 +179,6 @@ export default {
     this.refreshData()
   },
   methods: {
-    initMockData() {
-      // 强制清理旧数据并重新初始化（用于更新头像路径）
-      // const existingPosts = uni.getStorageSync('squarePosts') || []
-      // if (existingPosts.length > 0) {
-      //   return // 已有数据，不需要初始化
-      // }
-      
-      // 创建模拟数据
-      const mockPosts = [
-        {
-          id: 'mock-1',
-          day: 1,
-          taskName: '早起锻炼',
-          content: '今天早上6点起床，在公园跑了5公里，感觉精神状态特别好！坚持就是胜利💪',
-          images: [],
-          teamName: '早起鸟队',
-          createdAt: Date.now() - 2 * 60 * 60 * 1000, // 2小时前
-          updatedAt: Date.now() - 2 * 60 * 60 * 1000,
-          likeCount: 12,
-          commentCount: 3,
-          viewCount: 45,
-          isLiked: false,
-          comments: [],
-          latestCommentTime: null,
-          avatar1: '/static/square/user-icon.png',
-          avatar2: '/static/square/user-icon.png'
-        },
-        {
-          id: 'mock-2',
-          day: 3,
-          taskName: '健康饮食',
-          content: '今天准备了营养丰富的早餐：燕麦粥配水果，还有一杯豆浆。健康生活从每一餐开始！',
-          images: [],
-          teamName: '健康生活队',
-          createdAt: Date.now() - 5 * 60 * 60 * 1000, // 5小时前
-          updatedAt: Date.now() - 5 * 60 * 60 * 1000,
-          likeCount: 8,
-          commentCount: 1,
-          viewCount: 32,
-          isLiked: true,
-          comments: [],
-          latestCommentTime: null,
-          avatar1: '/static/square/user-icon.png',
-          avatar2: '/static/square/user-icon.png'
-        },
-        {
-          id: 'mock-3',
-          day: 2,
-          taskName: '阅读学习',
-          content: '今天读了《高效能人士的七个习惯》第二章，收获很多。知识就是力量，学习永无止境📚',
-          images: [],
-          teamName: '学霸联盟',
-          createdAt: Date.now() - 1 * 24 * 60 * 60 * 1000, // 1天前
-          updatedAt: Date.now() - 1 * 24 * 60 * 60 * 1000,
-          likeCount: 15,
-          commentCount: 5,
-          viewCount: 68,
-          isLiked: false,
-          comments: [],
-          latestCommentTime: Date.now() - 3 * 60 * 60 * 1000, // 3小时前有评论
-          avatar1: '/static/square/user-icon.png',
-          avatar2: '/static/square/user-icon.png'
-        }
-      ]
-      
-      // 保存到本地存储
-      uni.setStorageSync('squarePosts', mockPosts)
-      console.log('已初始化模拟打卡数据')
-    },
     async refreshData() {
       this.page = 1
       this.hasMore = true
@@ -261,38 +192,66 @@ export default {
 
       this.loading = true
       try {
-        // 优先从本地存储获取数据
-        const localPosts = uni.getStorageSync('squarePosts') || []
-        let result = { list: [] }
+        // 从服务端获取真实数据
+        const result = await getSquareList(this.page, this.pageSize)
+        console.log('📋 获取到的广场数据:', result)
         
-        try {
-          // 尝试获取服务端数据
-          result = await getSquareList(this.page, this.pageSize)
-        } catch (err) {
-          console.warn('获取服务端数据失败，使用本地数据:', err)
-        }
-        
-        // 合并本地数据和服务端数据
         const serverPosts = result.list || []
-        const mergedPosts = [...localPosts, ...serverPosts]
         
-        // 去重并排序
-        const uniquePosts = this.removeDuplicates(mergedPosts)
-        const sortedPosts = this.sortPosts(uniquePosts)
+        // 转换数据格式以匹配前端显示需求
+        const formattedPosts = serverPosts.map(post => {
+          // 从title中提取天数，例如"第1天打卡"
+          let day = 1
+          if (post.title) {
+            const match = post.title.match(/第(\d+)天/)
+            if (match) {
+              day = parseInt(match[1])
+            }
+          }
+          
+          return {
+            id: post.postId || post.id,
+            postId: post.postId || post.id,
+            day: day,
+            taskName: post.taskTitle || '',
+            content: post.content || post.description || '',
+            photo: post.photo || null,
+            images: post.photo ? [post.photo] : [],
+            teamName: post.teamName || '未命名队伍',
+            createdAt: post.createTime ? new Date(post.createTime).getTime() : Date.now(),
+            updatedAt: post.createTime ? new Date(post.createTime).getTime() : Date.now(),
+            likeCount: post.likeCount || 0, // 使用后端返回的真实点赞数
+            commentCount: post.commentCount || 0,
+            viewCount: 0, // 后端暂未提供
+            isLiked: post.isLiked || false,
+            comments: [],
+            latestCommentTime: null,
+            avatar1: '/static/square/user-icon.png', // 后端暂未提供，使用默认头像
+            avatar2: '/static/square/user-icon.png'
+          }
+        })
         
         if (this.page === 1) {
-          this.allPosts = sortedPosts
-          this.postList = sortedPosts.slice(0, this.pageSize)
+          this.allPosts = formattedPosts
+          this.postList = formattedPosts.slice(0, this.pageSize)
         } else {
-          const startIndex = (this.page - 1) * this.pageSize
-          const endIndex = startIndex + this.pageSize
-          this.postList.push(...sortedPosts.slice(startIndex, endIndex))
+          this.postList.push(...formattedPosts)
         }
 
-        this.hasMore = this.postList.length < this.allPosts.length
+        // 判断是否还有更多数据
+        this.hasMore = formattedPosts.length >= this.pageSize
         this.page++
+        
+        // 更新本地存储（用于离线查看）
+        if (this.page === 2) { // 第一页加载完成后保存
+          uni.setStorageSync('squarePosts', this.allPosts)
+        }
       } catch (err) {
         console.error('加载广场列表失败:', err)
+        uni.showToast({
+          title: '加载失败，请稍后重试',
+          icon: 'none'
+        })
       } finally {
         this.loading = false
       }
@@ -332,7 +291,7 @@ export default {
       this.hasMore = this.postList.length < this.allPosts.length
     },
     handleSquareUpdate() {
-      // 广场数据更新时刷新列表
+      // 广场数据更新时刷新列表（从服务器重新加载）
       this.refreshData()
     },
     loadMore() {

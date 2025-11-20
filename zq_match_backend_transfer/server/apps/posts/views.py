@@ -8,9 +8,12 @@ from django.db.models import Q
 from django.utils import timezone
 
 from server.utils.pagination import StandardResultsSetPagination
-from .models import Post
+from .models import Post, PostLike, PostComment
 from .serializers import PostSerializer, PostCreateSerializer
 from tasks.models import Task
+from users.serializers import UserSerializer
+from zq_django_util.exceptions import ApiException
+from zq_django_util.response import ResponseType
 
 
 class PostViewSet(
@@ -212,3 +215,572 @@ class PostViewSet(
         
         serializer = self.get_serializer(posts, many=True)
         return Response(serializer.data)
+
+    # ========== 前端打卡接口（/api/checkin/） ==========
+    
+    @action(methods=["get"], detail=False, url_path="tasks")
+    def checkin_tasks(self, request):
+        """获取打卡任务列表（20个任务）- 前端接口"""
+        # 获取所有任务（按创建时间排序），最多20个
+        tasks = Task.objects.all().order_by('create_time')[:20]
+        
+        result = []
+        for idx, task in enumerate(tasks, start=1):
+            result.append({
+                'day': idx,
+                'taskId': task.id,
+                'title': task.title,
+                'cover': request.build_absolute_uri(task.cover.url) if task.cover else None,
+                'introduction': task.introduction,
+                'score': task.score,
+                'startTime': task.start_time.isoformat() if task.start_time else None,
+                'endTime': task.end_time.isoformat() if task.end_time else None,
+            })
+        
+        return Response(result)
+    
+    @action(methods=["post"], detail=False, url_path="submit")
+    def checkin_submit(self, request):
+        """提交打卡 - 前端接口"""
+        user = request.user
+        
+        # 检查用户是否有队伍
+        if not user.team:
+            return Response(
+                {"error": "您还没有队伍，无法打卡"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        day = request.data.get('day')
+        task_id = request.data.get('taskId')  # 支持直接传递taskId
+        
+        if not day:
+            return Response(
+                {"error": "请提供day参数"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 如果提供了taskId，直接使用；否则根据day获取对应的任务
+        if task_id:
+            try:
+                task = Task.objects.get(id=task_id)
+            except Task.DoesNotExist:
+                return Response(
+                    {"error": f"任务ID {task_id} 不存在"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        else:
+            # 根据day获取对应的任务（假设任务按创建时间排序，第1个任务对应day=1）
+            tasks = Task.objects.all().order_by('create_time')
+            if day < 1 or day > tasks.count():
+                return Response(
+                    {"error": f"day参数无效，应在1-{tasks.count()}之间"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            task = tasks[day - 1]
+        
+        # 检查是否已经打卡：需要同时检查任务和天数
+        # 因为同一个任务可以打卡多次（不同天数），所以需要检查title中是否包含"第{day}天"
+        existing_post = Post.objects.filter(
+            team=user.team,
+            task=task,
+            title__contains=f"第{day}天"
+        ).first()
+        
+        if existing_post:
+            return Response(
+                {
+                    "code": "00000",
+                    "msg": "",
+                    "detail": "",
+                    "data": {
+                        "error": f"该任务第{day}天已打卡",
+                        "postId": existing_post.id,
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 处理前端数据格式
+        content = request.data.get('content', '')
+        images = request.data.get('images', [])
+        sync_to_square = request.data.get('syncToSquare', False)  # 是否同步到广场
+        
+        # 检查是否有图片（可以是文件对象或URL字符串）
+        photo_file = request.FILES.get('photo')  # 如果是文件上传
+        photo_url = None
+        
+        if not photo_file and (not images or len(images) == 0):
+            return Response(
+                {
+                    "code": "00000",
+                    "msg": "",
+                    "detail": "",
+                    "data": {"photo": ["没有提交任何文件。"]}
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 如果前端传递的是图片URL数组，使用第一张
+        if not photo_file and images and len(images) > 0:
+            photo_url = images[0] if isinstance(images[0], str) else None
+        
+        # 创建打卡记录
+        post_data = {
+            'title': f"第{day}天打卡",
+            'description': content,
+            'task': task.id,
+            'is_published': sync_to_square,  # 保存是否发布到广场
+        }
+        
+        # 如果有文件对象，使用序列化器正常处理
+        if photo_file:
+            post_data['photo'] = photo_file
+            serializer = PostCreateSerializer(data=post_data)
+            if not serializer.is_valid():
+                return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            post = serializer.save(team=user.team, task=task)
+        else:
+            # 如果有图片URL，手动创建Post对象
+            if photo_url:
+                # 处理图片URL：提取相对路径
+                if photo_url.startswith('http'):
+                    # 提取相对路径（假设URL格式为 http://host/media/...）
+                    if '/media/' in photo_url:
+                        relative_path = photo_url.split('/media/')[-1]
+                    else:
+                        # 如果URL格式不对，尝试提取文件名
+                        relative_path = photo_url.split('/')[-1]
+                else:
+                    # 已经是相对路径
+                    relative_path = photo_url
+                
+                # 创建Post对象，手动设置photo字段和is_published字段
+                post = Post.objects.create(
+                    title=post_data['title'],
+                    description=post_data['description'],
+                    photo=relative_path,  # 保存相对路径
+                    team=user.team,
+                    task=task,
+                    is_published=sync_to_square  # 保存是否发布到广场
+                )
+            else:
+                return Response(
+                    {
+                        "code": "00000",
+                        "msg": "",
+                        "detail": "",
+                        "data": {"photo": ["没有提交任何文件。"]}
+                    },
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        response_serializer = PostSerializer(post)
+        return Response(
+            {
+                "message": "打卡成功",
+                "data": response_serializer.data
+            },
+            status=status.HTTP_201_CREATED
+        )
+    
+    @action(methods=["get"], detail=False, url_path="checkin-detail")
+    def checkin_detail(self, request):
+        """获取某天的打卡详情 - 前端接口"""
+        user = request.user
+        day = request.query_params.get('day')
+        
+        if not day:
+            return Response(
+                {"code": "00000", "msg": "", "detail": "", "data": {"error": "请提供day参数"}},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            day = int(day)
+        except ValueError:
+            return Response(
+                {"error": "day参数必须是数字"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 根据day获取对应的任务
+        tasks = Task.objects.all().order_by('create_time')
+        if day < 1 or day > tasks.count():
+            return Response(
+                {"error": f"day参数无效，应在1-{tasks.count()}之间"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        task = tasks[day - 1]
+        
+        # 获取我的打卡记录
+        my_post = None
+        if user.team:
+            my_post = Post.objects.filter(
+                team=user.team,
+                task=task
+            ).select_related('task', 'team').first()
+        
+        # 获取队友的打卡记录
+        teammate_post = None
+        if user.team and user.team.members.count() > 1:
+            # 获取队伍中的其他成员
+            teammates = user.team.members.exclude(id=user.id)
+            if teammates.exists():
+                # 假设队伍只有2个人，获取另一个人的打卡记录
+                teammate = teammates.first()
+                # 注意：这里需要根据实际业务逻辑来获取队友的打卡记录
+                # 如果打卡是按队伍记录的，那么队友的打卡就是同一个Post
+                # 如果打卡是按个人记录的，需要查询队友的Post
+                pass
+        
+        result = {
+            'day': day,
+            'task': {
+                'id': task.id,
+                'title': task.title,
+                'cover': request.build_absolute_uri(task.cover.url) if task.cover else None,
+                'introduction': task.introduction,
+                'score': task.score,
+            },
+            'myCheckin': PostSerializer(my_post).data if my_post else None,
+            'teammateCheckin': PostSerializer(teammate_post).data if teammate_post else None,
+        }
+        
+        return Response(result)
+    
+    @action(methods=["get"], detail=False, url_path="myList")
+    def checkin_my_list(self, request):
+        """获取我的打卡记录列表 - 前端接口"""
+        user = request.user
+        
+        if not user.team:
+            return Response([])
+        
+        posts = Post.objects.filter(team=user.team).select_related('task', 'team').order_by('-id')
+        serializer = self.get_serializer(posts, many=True)
+        return Response(serializer.data)
+    
+    @action(methods=["get"], detail=False, url_path="teammateList")
+    def checkin_teammate_list(self, request):
+        """获取队友的打卡记录列表 - 前端接口"""
+        user = request.user
+        
+        if not user.team:
+            return Response([])
+        
+        # 注意：这里需要根据实际业务逻辑来获取队友的打卡记录
+        # 如果打卡是按队伍记录的，那么队友的打卡就是同一个Post
+        # 如果打卡是按个人记录的，需要查询队友的Post
+        # 这里暂时返回空列表
+        return Response([])
+    
+    @action(methods=["post"], detail=False, url_path="upload-image")
+    def checkin_upload_image(self, request):
+        """上传打卡图片 - 前端接口"""
+        from zq_django_util.exceptions import ApiException
+        from zq_django_util.response import ResponseType
+        
+        # 兼容两种字段名：image 和 file（前端可能使用 file）
+        image_file = request.FILES.get('image') or request.FILES.get('file')
+        if not image_file:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="请上传图片文件",
+            )
+        
+        # 检查文件大小（限制5MB）
+        if image_file.size > 5 * 1024 * 1024:
+            raise ApiException(
+                ResponseType.UnsupportedMediaSize,
+                msg="图片大小不能超过5MB",
+            )
+        
+        # 检查文件类型
+        allowed_types = ['image/jpeg', 'image/png', 'image/jpg', 'image/webp']
+        if image_file.content_type not in allowed_types:
+            raise ApiException(
+                ResponseType.UnsupportedMediaType,
+                msg="只支持 JPG、PNG、WEBP 格式的图片",
+            )
+        
+        # 保存图片（这里简化处理，实际应该保存到Post模型或临时存储）
+        # 暂时返回一个占位URL，实际应该保存文件并返回真实URL
+        # TODO: 实现图片保存逻辑
+        
+        return Response({
+            "code": "00000",
+            "msg": "图片上传成功",
+            "data": {
+                "url": request.build_absolute_uri(f"/media/checkin/{image_file.name}")
+            }
+        })
+    
+    @action(methods=["post"], detail=False, url_path="resubmit")
+    def checkin_resubmit(self, request):
+        """重新提交打卡（被驳回后）- 前端接口"""
+        user = request.user
+        checkin_id = request.data.get('checkinId')
+        
+        if not checkin_id:
+            return Response(
+                {"error": "请提供checkinId参数"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            post = Post.objects.get(id=checkin_id)
+        except Post.DoesNotExist:
+            return Response(
+                {"error": "打卡记录不存在"},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # 检查权限：只能修改自己队伍的打卡
+        if post.team != user.team:
+            return Response(
+                {"error": "无权修改其他队伍的打卡记录"},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # 更新打卡记录
+        content = request.data.get('content', '')
+        images = request.data.get('images', [])
+        
+        if content:
+            post.description = content
+        
+        # 处理图片更新（需要根据实际业务逻辑处理）
+        
+        post.save()
+        
+        serializer = PostSerializer(post)
+        return Response(
+            {
+                "message": "重新提交成功",
+                "data": serializer.data
+            },
+            status=status.HTTP_200_OK
+        )
+    
+    # ========== 广场相关接口（/api/square/） ==========
+    
+    @action(methods=["get"], detail=False, url_path="list")
+    def square_list(self, request):
+        """获取广场列表（分页的打卡记录）- 前端接口"""
+        page = int(request.query_params.get('page', 1))
+        page_size = int(request.query_params.get('pageSize', 20))
+        
+        # 只获取发布到广场的打卡记录，按创建时间倒序
+        queryset = Post.objects.filter(is_published=True).select_related('task', 'team').prefetch_related('likes', 'comments').order_by('-create_time')
+        
+        # 手动分页
+        start = (page - 1) * page_size
+        end = start + page_size
+        posts = queryset[start:end]
+        
+        result = []
+        user = request.user
+        
+        for post in posts:
+            # 检查当前用户是否已点赞
+            is_liked = False
+            if user.is_authenticated:
+                is_liked = PostLike.objects.filter(post=post, user=user).exists()
+            
+            # 获取点赞数
+            like_count = post.likes.count()
+            
+            # 获取评论数
+            comment_count = post.comments.count()
+            
+            # 构建图片URL
+            photo_url = None
+            if post.photo:
+                photo_url = request.build_absolute_uri(post.photo.url)
+            
+            result.append({
+                'postId': post.id,
+                'title': post.title,
+                'content': post.description,
+                'photo': photo_url,
+                'teamName': post.team.name if post.team else None,
+                'taskTitle': post.task.title if post.task else None,
+                'likeCount': like_count,
+                'commentCount': comment_count,
+                'isLiked': is_liked,
+                'createTime': post.create_time.isoformat() if post.create_time else None,
+            })
+        
+        return Response({
+            'list': result,
+            'page': page,
+            'pageSize': page_size,
+            'total': queryset.count(),
+        })
+    
+    @action(methods=["post"], detail=False, url_path="like")
+    def square_like(self, request):
+        """点赞/取消点赞 - 前端接口"""
+        user = request.user
+        post_id = request.data.get('postId')
+        
+        if not post_id:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="请提供postId参数",
+            )
+        
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            raise ApiException(
+                ResponseType.ResourceNotFound,
+                msg="打卡记录不存在",
+            )
+        
+        # 检查是否已点赞
+        like, created = PostLike.objects.get_or_create(post=post, user=user)
+        
+        if created:
+            # 新点赞
+            return Response({
+                'msg': '点赞成功',
+                'isLiked': True,
+                'likeCount': post.likes.count(),
+            })
+        else:
+            # 取消点赞
+            like.delete()
+            return Response({
+                'msg': '取消点赞成功',
+                'isLiked': False,
+                'likeCount': post.likes.count(),
+            })
+    
+    @action(methods=["get"], detail=False, url_path="detail")
+    def square_detail(self, request):
+        """获取广场详情（打卡详情）- 前端接口"""
+        # 优先检查postId参数（广场详情使用）
+        post_id = request.query_params.get('postId')
+        
+        # 如果没有postId但有day参数，说明可能是误路由到checkin_detail
+        # 这种情况下应该返回错误，提示使用postId
+        if not post_id:
+            day = request.query_params.get('day')
+            if day:
+                raise ApiException(
+                    ResponseType.ParamValidationFailed,
+                    msg="广场详情接口需要使用postId参数，而不是day参数",
+                )
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="请提供postId参数",
+            )
+        
+        try:
+            post = Post.objects.select_related('task', 'team').prefetch_related('likes', 'comments', 'comments__user').get(id=post_id)
+        except Post.DoesNotExist:
+            raise ApiException(
+                ResponseType.ResourceNotFound,
+                msg="打卡记录不存在",
+            )
+        
+        user = request.user
+        
+        # 检查当前用户是否已点赞
+        is_liked = False
+        if user.is_authenticated:
+            is_liked = PostLike.objects.filter(post=post, user=user).exists()
+        
+        # 获取点赞列表（前10个）
+        likes = post.likes.select_related('user')[:10]
+        like_users = [{'userId': like.user.id, 'username': like.user.username, 'avatar': request.build_absolute_uri(like.user.avatar.url) if like.user.avatar else None} for like in likes]
+        
+        # 获取评论列表
+        comments = post.comments.select_related('user').all()
+        comment_list = []
+        for comment in comments:
+            comment_list.append({
+                'commentId': comment.id,
+                'userId': comment.user.id,
+                'username': comment.user.username,
+                'avatar': request.build_absolute_uri(comment.user.avatar.url) if comment.user.avatar else None,
+                'content': comment.content,
+                'createTime': comment.create_time.isoformat() if comment.create_time else None,
+            })
+        
+        # 构建图片URL
+        photo_url = None
+        if post.photo:
+            photo_url = request.build_absolute_uri(post.photo.url)
+        
+        return Response({
+            'postId': post.id,
+            'title': post.title,
+            'content': post.description,
+            'photo': photo_url,
+            'teamName': post.team.name if post.team else None,
+            'taskTitle': post.task.title if post.task else None,
+            'likeCount': post.likes.count(),
+            'commentCount': post.comments.count(),
+            'isLiked': is_liked,
+            'likeUsers': like_users,
+            'comments': comment_list,
+            'createTime': post.create_time.isoformat() if post.create_time else None,
+        })
+    
+    @action(methods=["post"], detail=False, url_path="comment")
+    def square_comment(self, request):
+        """提交评论 - 前端接口"""
+        user = request.user
+        post_id = request.data.get('postId')
+        content = request.data.get('content', '').strip()
+        
+        if not post_id:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="请提供postId参数",
+            )
+        
+        if not content:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="评论内容不能为空",
+            )
+        
+        if len(content) > 500:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="评论内容不能超过500个字符",
+            )
+        
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            raise ApiException(
+                ResponseType.ResourceNotFound,
+                msg="打卡记录不存在",
+            )
+        
+        # 创建评论
+        comment = PostComment.objects.create(
+            post=post,
+            user=user,
+            content=content
+        )
+        
+        return Response({
+            'msg': '评论成功',
+            'commentId': comment.id,
+            'comment': {
+                'commentId': comment.id,
+                'userId': comment.user.id,
+                'username': comment.user.username,
+                'avatar': request.build_absolute_uri(comment.user.avatar.url) if comment.user.avatar else None,
+                'content': comment.content,
+                'createTime': comment.create_time.isoformat() if comment.create_time else None,
+            },
+            'commentCount': post.comments.count(),
+        })

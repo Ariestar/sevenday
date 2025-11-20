@@ -10,7 +10,7 @@ import { get, post } from '../utils/request'
  * @param {number} pageSize - 每页数量
  */
 export function getSquareList(page = 1, pageSize = 20) {
-  return get('/api/square/list', { page, pageSize })
+  return get('/api/square/list/', { page, pageSize })
 }
 
 /**
@@ -18,7 +18,7 @@ export function getSquareList(page = 1, pageSize = 20) {
  * @param {string} postId - 内容ID
  */
 export function toggleLike(postId) {
-  return post('/api/square/like', { postId })
+  return post('/api/square/like/', { postId })
 }
 
 /**
@@ -26,7 +26,7 @@ export function toggleLike(postId) {
  * @param {string} postId - 内容ID
  */
 export function getSquareDetail(postId) {
-  return get('/api/square/detail', { postId })
+  return get('/api/square/detail/', { postId })
 }
 
 /**
@@ -35,6 +35,6 @@ export function getSquareDetail(postId) {
  * @param {string} content - 评论内容
  */
 export function submitComment(postId, content) {
-  return post('/api/square/comment', { postId, content })
+  return post('/api/square/comment/', { postId, content })
 }
 

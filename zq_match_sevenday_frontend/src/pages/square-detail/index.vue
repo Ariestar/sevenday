@@ -22,14 +22,14 @@
           />
         </view>
         <view class="team-info-section">
-          <view class="team-name-text">{{ postData.teamName || 'xxxxxxxx小队' }}</view>
+          <view class="team-name-text">{{ postData.teamName || '未命名队伍' }}</view>
           <view class="task-number">TASK {{ postData.day }}</view>
         </view>
       </view>
 
       <!-- 任务 Card -->
       <view class="task-card">
-        <view class="task-title">{{ postData.taskName || '早起锻炼' }}</view>
+        <view class="task-title">{{ postData.taskName || '未知任务' }}</view>
         <view class="checkin-date">打卡日期：{{ formatDate(postData.createdAt) }}</view>
       </view>
 
@@ -56,9 +56,9 @@
       <!-- 数据 Card -->
       <view class="stats-card">
         <view class="stats-text">
-          点赞：{{ postData.likeCount || 12 }}　
-          评论：{{ postData.commentCount || 5 }}　
-          浏览：{{ postData.viewCount || 127 }}
+          点赞：{{ postData.likeCount || 0 }}　
+          评论：{{ postData.commentCount || 0 }}　
+          浏览：{{ postData.viewCount || 0 }}
         </view>
       </view>
 
@@ -123,7 +123,7 @@
 </template>
 
 <script>
-import { getSquareDetail, toggleLike } from '@/services/square'
+import { getSquareDetail, toggleLike, submitComment } from '@/services/square'
 import CustomTabBar from '../../components/CustomTabBar.vue'
 
 export default {
@@ -141,10 +141,20 @@ export default {
     }
   },
   onLoad(options) {
+    console.log('📋 广场详情页面加载，options:', options)
     if (options.id) {
       this.postId = options.id
+      console.log('📋 设置postId:', this.postId)
       this.loadDetail()
-      this.incrementViewCount()
+    } else {
+      console.error('❌ 未提供postId参数')
+      uni.showToast({
+        title: '参数错误',
+        icon: 'none'
+      })
+      setTimeout(() => {
+        uni.navigateBack()
+      }, 1500)
     }
   },
   methods: {
@@ -159,15 +169,73 @@ export default {
 
         if (!postData) {
           // 如果本地没有，尝试从服务器获取
+          console.log('📋 从服务器获取详情，postId:', this.postId)
           const result = await getSquareDetail(this.postId)
-          postData = result.data
+          console.log('📋 服务器返回的数据:', result)
+          
+          // 后端返回的数据格式：{ postId, title, content, photo, teamName, taskTitle, ... }
+          // 需要转换为前端需要的格式
+          if (result) {
+            // 从title中提取天数
+            let day = 1
+            if (result.title) {
+              const match = result.title.match(/第(\d+)天/)
+              if (match) {
+                day = parseInt(match[1])
+              }
+            }
+            
+            // 处理评论数据：将后端格式转换为前端格式
+            const formattedComments = (result.comments || []).map(comment => ({
+              id: comment.commentId || comment.id,
+              commentId: comment.commentId || comment.id,
+              content: comment.content || '',
+              userName: comment.username || comment.userName || '匿名用户',
+              userId: comment.userId || null,
+              avatar: comment.avatar || '/static/square/user-icon.png',
+              createdAt: comment.createTime ? new Date(comment.createTime).getTime() : Date.now(),
+              createTime: comment.createTime || null
+            }))
+            
+            // 处理点赞用户列表：获取前两个用户的头像用于显示
+            const likeUsers = result.likeUsers || []
+            const avatar1 = likeUsers.length > 0 && likeUsers[0].avatar 
+              ? likeUsers[0].avatar 
+              : '/static/square/user-icon.png'
+            const avatar2 = likeUsers.length > 1 && likeUsers[1].avatar 
+              ? likeUsers[1].avatar 
+              : '/static/square/user-icon.png'
+            
+            postData = {
+              id: result.postId || result.id,
+              postId: result.postId || result.id,
+              day: day,
+              taskName: result.taskTitle || '',
+              content: result.content || result.description || '',
+              images: result.photo ? [result.photo] : [],
+              teamName: result.teamName || '未命名队伍',
+              createdAt: result.createTime ? new Date(result.createTime).getTime() : Date.now(),
+              updatedAt: result.createTime ? new Date(result.createTime).getTime() : Date.now(),
+              likeCount: result.likeCount || 0,
+              commentCount: result.commentCount || 0,
+              viewCount: 0, // 后端暂未提供浏览量
+              isLiked: result.isLiked || false,
+              comments: formattedComments,
+              latestCommentTime: formattedComments.length > 0 
+                ? formattedComments[formattedComments.length - 1].createdAt 
+                : null,
+              avatar1: avatar1,
+              avatar2: avatar2,
+              likeUsers: likeUsers // 保存完整的点赞用户列表
+            }
+          }
         }
 
         if (postData) {
           this.postData = postData
           this.comments = postData.comments || []
           
-          // 如果没有图片数据，添加测试图片（方便测试显示效果）
+          // 如果没有图片数据，添加默认图片
           if (!this.postData.images || this.postData.images.length === 0) {
             this.postData.images = [
               '/static/square/user-icon.png',
@@ -179,7 +247,10 @@ export default {
           if (this.postData.isLiked === undefined) {
             this.postData.isLiked = false
           }
+          
+          console.log('✅ 详情数据已加载:', this.postData)
         } else {
+          console.error('❌ 未找到详情数据')
           uni.showToast({
             title: '未找到相关内容',
             icon: 'none'
@@ -300,29 +371,48 @@ export default {
     async submitComment() {
       if (!this.commentContent.trim()) return
 
-      const newComment = {
-        id: `comment_${Date.now()}`,
-        content: this.commentContent.trim(),
-        userName: '我',
-        avatar: '/static/square/user-icon.png',
-        createdAt: Date.now()
+      try {
+        // 先提交到服务器
+        const result = await submitComment(this.postId, this.commentContent.trim())
+        console.log('📋 评论提交成功，返回数据:', result)
+        
+        // 后端返回格式：{ msg, commentId, comment: { commentId, userId, username, avatar, content, createTime } }
+        const commentData = result.comment || result
+        
+        // 从服务器返回的数据构建评论对象
+        const newComment = {
+          id: commentData.commentId || result.commentId || `comment_${Date.now()}`,
+          commentId: commentData.commentId || result.commentId || `comment_${Date.now()}`,
+          content: commentData.content || this.commentContent.trim(),
+          userName: commentData.username || commentData.userName || '我',
+          userId: commentData.userId || null,
+          avatar: commentData.avatar || '/static/square/user-icon.png',
+          createdAt: commentData.createTime ? new Date(commentData.createTime).getTime() : Date.now(),
+          createTime: commentData.createTime || null
+        }
+
+        // 添加到评论列表
+        this.comments.unshift(newComment)
+        
+        // 更新帖子数据
+        this.postData.commentCount = (this.postData.commentCount || 0) + 1
+        this.postData.comments = this.comments
+        this.postData.latestCommentTime = newComment.createdAt
+        
+        this.updateLocalPost()
+        this.hideCommentModal()
+
+        uni.showToast({
+          title: '评论成功',
+          icon: 'success'
+        })
+      } catch (error) {
+        console.error('提交评论失败:', error)
+        uni.showToast({
+          title: '评论失败，请重试',
+          icon: 'none'
+        })
       }
-
-      // 添加到评论列表
-      this.comments.unshift(newComment)
-      
-      // 更新帖子数据
-      this.postData.commentCount = (this.postData.commentCount || 0) + 1
-      this.postData.comments = this.comments
-      this.postData.latestCommentTime = Date.now()
-      
-      this.updateLocalPost()
-      this.hideCommentModal()
-
-      uni.showToast({
-        title: '评论成功',
-        icon: 'success'
-      })
     },
     previewImage(images, current) {
       uni.previewImage({
