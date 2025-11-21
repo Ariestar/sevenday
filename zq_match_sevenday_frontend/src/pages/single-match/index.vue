@@ -166,7 +166,7 @@
 
 <script>
 import { GENDER_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
-import { saveMatchExpectation, getMatchExpectation } from '../../services/match'
+import { saveMatchExpectation, getMatchExpectation, recommendMatches, autoMatch } from '../../services/match'
 import { getAcademies } from '../../services/academies'
 import SuccessModal from '../../components/SuccessModal.vue'
 
@@ -290,6 +290,10 @@ export default {
       const option = this.majorOptions.find(item => item.value === value)
       return option ? option.label : ''
     },
+    getEducationFromGrade(grade) {
+      if (!grade) return ''
+      return grade <= 4 ? '本科生' : (grade <= 6 ? '研究生' : '')
+    },
     async handleStartMatch() {
       if (!this.isFormValid) {
         uni.showToast({
@@ -300,53 +304,166 @@ export default {
       }
 
       try {
-        uni.showLoading({ title: '开始匹配...' })
+        uni.showLoading({ title: '保存中...' })
         
-        // TODO: 调用开始匹配API
-        console.log('开始匹配:', this.expectation)
+        // 先保存期望信息
+        const saveData = {
+          gender: this.expectation.gender || '',
+          degree: this.expectation.degree || '',
+          majorCategory: this.expectation.majorCategory || '',
+          college: this.expectation.college || ''
+        }
         
-        // 模拟API调用
-        await new Promise(resolve => setTimeout(resolve, 1500))
+        await saveMatchExpectation(saveData)
+        
+        // 保存成功后，检查是否有匹配对象
+        uni.showLoading({ title: '匹配中...' })
+        let hasMatch = false
+        let matchResultData = null
+        
+        try {
+          // 先尝试自动匹配
+          const autoMatchResult = await autoMatch()
+          console.log('自动匹配结果:', autoMatchResult)
+          
+          // 检查自动匹配是否成功（返回格式：{ teammate: {...}, team: {...} }）
+          if (autoMatchResult && autoMatchResult.teammate) {
+            hasMatch = true
+            const teammate = autoMatchResult.teammate
+            matchResultData = {
+              id: teammate.id,
+              name: teammate.username || teammate.name || '未知',
+              gender: teammate.gender === 1 ? '男' : (teammate.gender === 2 ? '女' : ''),
+              education: this.getEducationFromGrade(teammate.grade),
+              majorCategory: teammate.major_category || '',
+              college: teammate.academy?.name || '',
+              avatar: teammate.avatar || ''
+            }
+          } else {
+            // 如果自动匹配没有结果，尝试获取推荐列表
+            const recommendResult = await recommendMatches({ limit: 10 })
+            console.log('推荐结果:', recommendResult)
+            
+            // 处理返回的数据结构：recommendResult 可能是 { code, msg, data } 或直接是 data
+            const recommendData = recommendResult?.data || recommendResult
+            
+            // 检查是否已经匹配成功
+            if (recommendData && recommendData.isMatched === true && recommendData.teammates && recommendData.teammates.length > 0) {
+              // 已经匹配成功，使用队友信息
+              hasMatch = true
+              const teammate = recommendData.teammates[0]
+              console.log('队友原始数据:', teammate)
+              matchResultData = {
+                id: teammate.id,
+                name: teammate.username || teammate.name || '未知',
+                gender: teammate.gender === 1 ? '男' : (teammate.gender === 2 ? '女' : ''),
+                education: this.getEducationFromGrade(teammate.grade),
+                majorCategory: teammate.major_category || teammate.majorCategory || '',
+                college: teammate.academy?.name || teammate.academy_name || teammate.college || '',
+                avatar: teammate.avatar || ''
+              }
+            } else if (recommendData && recommendData.recommendations && recommendData.recommendations.length > 0) {
+              // 有推荐对象
+              hasMatch = true
+              // 使用第一个推荐对象
+              const rec = recommendData.recommendations[0]
+              console.log('推荐对象原始数据:', rec)
+              matchResultData = {
+                id: rec.id,
+                name: rec.username || rec.name || '未知',
+                gender: rec.gender === 1 ? '男' : (rec.gender === 2 ? '女' : ''),
+                education: this.getEducationFromGrade(rec.grade),
+                majorCategory: rec.major_category || rec.majorCategory || '',
+                college: rec.academy?.name || rec.academy_name || rec.college || '',
+                avatar: rec.avatar || ''
+              }
+            }
+          }
+        } catch (matchError) {
+          console.error('匹配失败:', matchError)
+          
+          // 检查是否是"没有匹配对象"的错误
+          const errorMsg = matchError.message || matchError.msg || ''
+          if (errorMsg.includes('没有找到') || errorMsg.includes('暂无') || errorMsg.includes('暂时没有')) {
+            // 没有匹配对象，不跳转
+            hasMatch = false
+          } else if (matchError.errMsg?.includes('invalid url') || matchError.errno === 600009) {
+            // 如果是无效URL错误（开发阶段），允许继续跳转
+            console.log('开发阶段：API未配置，允许跳转')
+            hasMatch = true // 开发阶段允许跳转
+          } else {
+            // 其他错误，不跳转
+            hasMatch = false
+          }
+        }
         
         uni.hideLoading()
         
-        // 模拟匹配结果数据
-        const matchResult = {
-          name: '张同学',
-          gender: '女',
-          education: '本科生',
-          majorCategory: '工科',
-          college: '计算机学院',
-          avatar: '' // 可以设置头像URL
-        }
-        
-        // 跳转到匹配结果页面，传递匹配数据
-        uni.navigateTo({
-          url: `/pages/single-match-result/index?matchData=${encodeURIComponent(JSON.stringify(matchResult))}`,
-          success: () => {
-            console.log('跳转到匹配结果页面成功')
-            uni.showToast({
-              title: '匹配成功！',
-              icon: 'success'
+        if (hasMatch) {
+          // 有匹配对象，跳转到匹配结果页面
+          if (matchResultData) {
+            // 传递匹配数据
+            uni.navigateTo({
+              url: `/pages/single-match-result/index?matchData=${encodeURIComponent(JSON.stringify(matchResultData))}`,
+              success: () => {
+                console.log('跳转到匹配结果页面成功')
+                uni.showToast({
+                  title: '匹配成功！',
+                  icon: 'success'
+                })
+              },
+              fail: (err) => {
+                console.error('跳转到匹配结果页面失败:', err)
+                uni.showToast({
+                  title: '跳转失败，请重试',
+                  icon: 'none'
+                })
+              }
             })
-          },
-          fail: (err) => {
-            console.error('跳转到匹配结果页面失败:', err)
-            uni.showToast({
-              title: '跳转失败，请重试',
-              icon: 'none'
+          } else {
+            // 开发阶段：没有匹配数据，直接跳转让匹配结果页面自己处理
+            uni.navigateTo({
+              url: '/pages/single-match-result/index',
+              success: () => {
+                console.log('跳转到匹配结果页面成功')
+              },
+              fail: (err) => {
+                console.error('跳转失败:', err)
+                uni.showToast({
+                  title: '跳转失败，请重试',
+                  icon: 'none'
+                })
+              }
             })
           }
-        })
+        } else {
+          // 没有匹配对象，提示用户
+          uni.showToast({
+            title: '暂无匹配对象，请稍后再试',
+            icon: 'none',
+            duration: 2000
+          })
+        }
         
       } catch (error) {
         uni.hideLoading()
-        console.error('匹配失败:', error)
+        console.error('保存期望或匹配失败:', error)
         
-        uni.showToast({
-          title: error.message || '匹配失败，请重试',
-          icon: 'none'
-        })
+        // 开发阶段：如果是无效URL错误，允许继续
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          console.log('开发阶段：API未配置，继续跳转')
+          uni.navigateTo({
+            url: '/pages/single-match-result/index',
+            fail: (err) => {
+              console.error('跳转失败:', err)
+            }
+          })
+        } else {
+          uni.showToast({
+            title: error.message || '操作失败，请重试',
+            icon: 'none'
+          })
+        }
       }
     },
     async handleSave() {
@@ -414,22 +531,62 @@ export default {
         }
         
         await saveMatchExpectation(saveData)
+        
+        // 保存成功后，检查是否有匹配对象
+        uni.showLoading({ title: '匹配中...' })
+        let hasMatch = false
+        try {
+          const matchResult = await recommendMatches({ limit: 10 })
+          console.log('推荐结果:', matchResult)
+          
+          // 处理返回的数据结构：matchResult 可能是 { code, msg, data } 或直接是 data
+          const matchData = matchResult?.data || matchResult
+          
+          // 检查是否已经匹配成功
+          if (matchData && matchData.isMatched === true && matchData.teammates && matchData.teammates.length > 0) {
+            // 已经匹配成功
+            hasMatch = true
+          } else if (matchData && matchData.recommendations && matchData.recommendations.length > 0) {
+            // 有推荐对象
+            hasMatch = true
+          }
+        } catch (matchError) {
+          console.error('检查匹配对象失败:', matchError)
+          // 如果是无效URL错误（开发阶段），允许继续跳转
+          if (matchError.errMsg?.includes('invalid url') || matchError.errno === 600009) {
+            console.log('开发阶段：API未配置，允许跳转')
+            hasMatch = true // 开发阶段允许跳转
+          } else {
+            // 其他错误，不跳转
+            hasMatch = false
+          }
+        }
+        
         uni.hideLoading()
         
-        // 跳转到智能匹配页面
-        uni.navigateTo({
-          url: '/pages/single-match-result/index',
-          success: () => {
-            console.log('跳转到智能匹配页面成功')
-          },
-          fail: (err) => {
-            console.error('跳转失败:', err)
-            uni.showToast({
-              title: '跳转失败，请重试',
-              icon: 'none'
-            })
-          }
-        })
+        if (hasMatch) {
+          // 有匹配对象，跳转到智能匹配页面
+          uni.navigateTo({
+            url: '/pages/single-match-result/index',
+            success: () => {
+              console.log('跳转到智能匹配页面成功')
+            },
+            fail: (err) => {
+              console.error('跳转失败:', err)
+              uni.showToast({
+                title: '跳转失败，请重试',
+                icon: 'none'
+              })
+            }
+          })
+        } else {
+          // 没有匹配对象，提示用户
+          uni.showToast({
+            title: '暂无匹配对象，请稍后再试',
+            icon: 'none',
+            duration: 2000
+          })
+        }
       } catch (error) {
         uni.hideLoading()
         console.error('保存期望失败:', error)

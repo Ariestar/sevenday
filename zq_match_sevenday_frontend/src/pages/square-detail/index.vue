@@ -82,6 +82,31 @@
         </view>
       </view>
       
+      <!-- 评论列表 Card -->
+      <view v-if="comments && comments.length > 0" class="comments-card">
+        <view class="comments-title">评论 ({{ comments.length }})</view>
+        <view class="comments-list">
+          <view 
+            v-for="(comment, index) in comments" 
+            :key="comment.commentId || comment.id || index"
+            class="comment-item"
+          >
+            <view class="comment-header">
+              <image 
+                :src="comment.avatar || '/static/square/user-icon.png'" 
+                class="comment-avatar" 
+                mode="aspectFill"
+              />
+              <view class="comment-info">
+                <text class="comment-username">{{ comment.userName || comment.username || '匿名用户' }}</text>
+                <text class="comment-time">{{ formatTime(comment.createdAt || comment.createTime) }}</text>
+              </view>
+            </view>
+            <view class="comment-content">{{ comment.content || '' }}</view>
+          </view>
+        </view>
+      </view>
+      
       <!-- 底部占位，为底部导航栏留出空间 -->
       <view class="bottom-placeholder"></view>
     </scroll-view>
@@ -286,8 +311,18 @@ export default {
     formatTime(timestamp) {
       if (!timestamp) return ''
       
+      // 处理 ISO 字符串格式的时间
+      let timeValue = timestamp
+      if (typeof timestamp === 'string') {
+        timeValue = new Date(timestamp).getTime()
+        // 如果解析失败，返回原字符串
+        if (isNaN(timeValue)) {
+          return timestamp
+        }
+      }
+      
       const now = Date.now()
-      const diff = now - timestamp
+      const diff = now - timeValue
       const minute = 60 * 1000
       const hour = 60 * minute
       const day = 24 * hour
@@ -299,7 +334,7 @@ export default {
       } else if (diff < day) {
         return `${Math.floor(diff / hour)}小时前`
       } else {
-        const date = new Date(timestamp)
+        const date = new Date(timeValue)
         return `${date.getMonth() + 1}月${date.getDate()}日`
       }
     },
@@ -835,6 +870,92 @@ export default {
 
 .submit-button::after {
   display: none;
+}
+
+/* 评论列表 Card */
+.comments-card {
+  width: calc(100% - 40rpx);
+  margin: 20rpx 20rpx;
+  background: #FFFFFF;
+  border-radius: 32rpx;
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.25);
+  padding: 40rpx 52rpx;
+  box-sizing: border-box;
+}
+
+.comments-title {
+  font-family: 'Inter';
+  font-size: 36rpx;
+  font-weight: 600;
+  color: #000000;
+  margin-bottom: 30rpx;
+  text-align: left;
+}
+
+.comments-list {
+  display: flex;
+  flex-direction: column;
+  gap: 30rpx;
+}
+
+.comment-item {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 30rpx;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.comment-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.comment-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 16rpx;
+}
+
+.comment-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #D9D9D9;
+  margin-right: 20rpx;
+}
+
+.comment-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.comment-username {
+  font-family: 'Inter';
+  font-size: 28rpx;
+  font-weight: 500;
+  color: #000000;
+  line-height: 34rpx;
+}
+
+.comment-time {
+  font-family: 'Inter';
+  font-size: 24rpx;
+  font-weight: 400;
+  color: #868686;
+  line-height: 28rpx;
+}
+
+.comment-content {
+  font-family: 'Inter';
+  font-size: 28rpx;
+  font-weight: 400;
+  color: #333333;
+  line-height: 40rpx;
+  word-break: break-word;
+  text-align: left;
+  padding-left: 84rpx; /* 对齐到用户名下方 */
 }
 
 /* 加载状态 */

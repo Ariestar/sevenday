@@ -66,7 +66,8 @@
           v-if="matchResult.avatar" 
           :src="matchResult.avatar" 
           class="avatar-image" 
-          mode="aspectFill" 
+          mode="aspectFill"
+          @error="handleAvatarError"
         />
         <text v-else class="avatar-placeholder">👤</text>
       </view>
@@ -91,7 +92,11 @@
 
       <!-- 确认按钮 -->
       <view class="confirm-buttons">
-        <button class="confirm-btn yes-btn" @click="handleConfirmTeam">
+        <button 
+          class="confirm-btn yes-btn" 
+          :class="{ 'disabled-btn': !matchResult || !matchResult.id || (!isAlreadyMatched && (!recommendations || recommendations.length === 0)) }"
+          :disabled="!matchResult || !matchResult.id || (!isAlreadyMatched && (!recommendations || recommendations.length === 0))"
+          @click="handleConfirmTeam">
           <text class="confirm-btn-text">是</text>
         </button>
         <button class="confirm-btn no-btn" @click="handleRejectTeam">
@@ -178,7 +183,8 @@ export default {
       showSuccessModal: false,
       successType: 'team-success',
       successTitle: '组队成功！',
-      showWaitModal: false // 等待组队弹窗
+      showWaitModal: false, // 等待组队弹窗
+      isAlreadyMatched: false // 是否已经匹配成功
     }
   },
   onLoad(options) {
@@ -203,16 +209,36 @@ export default {
         const result = await recommendMatches({ limit: 10 })
         console.log('推荐结果:', result)
         
-        if (result && result.recommendations && result.recommendations.length > 0) {
-          this.recommendations = result.recommendations
+        // 处理返回的数据结构：result 可能是 { code, msg, data } 或直接是 data
+        const data = result?.data || result
+        
+        // 检查是否已经匹配成功
+        if (data && data.isMatched === true && data.teammates && data.teammates.length > 0) {
+          // 已经匹配成功，显示队友信息
+          this.isAlreadyMatched = true
+          const teammate = data.teammates[0]
+          console.log('队友原始数据:', teammate)
+          this.matchResult = {
+            id: teammate.id,
+            name: teammate.username || teammate.name || '未知',
+            gender: teammate.gender === 1 ? '男' : (teammate.gender === 2 ? '女' : ''),
+            education: this.getEducationFromGrade(teammate.grade),
+            majorCategory: teammate.major_category || teammate.majorCategory || '',
+            college: teammate.academy?.name || teammate.academy_name || teammate.college || '',
+            avatar: teammate.avatar || ''
+          }
+          this.recommendations = []
+          console.log('已匹配成功，显示队友信息:', this.matchResult)
+        } else if (data && data.recommendations && data.recommendations.length > 0) {
+          // 有推荐对象
+          this.isAlreadyMatched = false
+          this.recommendations = data.recommendations
           // 显示第一个推荐对象
           this.updateCurrentMatch(0)
         } else {
-          uni.showToast({
-            title: '暂无推荐对象',
-            icon: 'none'
-          })
-          // 使用默认数据
+          // 没有推荐对象，清空推荐列表和匹配结果
+          this.isAlreadyMatched = false
+          this.recommendations = []
           this.matchResult = {
             id: null,
             name: '暂无匹配对象',
@@ -222,6 +248,11 @@ export default {
             college: '',
             avatar: ''
           }
+          uni.showToast({
+            title: '暂无推荐对象',
+            icon: 'none',
+            duration: 2000
+          })
         }
       } catch (error) {
         console.error('加载推荐失败:', error)
@@ -229,6 +260,7 @@ export default {
         // 开发阶段：如果是无效URL错误，使用默认数据
         if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
           console.log('开发阶段：API未配置，使用默认数据')
+          // 开发阶段仍然允许使用默认数据进行测试
           this.matchResult = {
             id: null,
             name: '张同学',
@@ -239,6 +271,17 @@ export default {
             avatar: ''
           }
         } else {
+          // 其他错误，清空推荐列表
+          this.recommendations = []
+          this.matchResult = {
+            id: null,
+            name: '暂无匹配对象',
+            gender: '',
+            education: '',
+            majorCategory: '',
+            college: '',
+            avatar: ''
+          }
           uni.showToast({
             title: error.message || '加载推荐失败',
             icon: 'none'
@@ -252,21 +295,28 @@ export default {
       if (index >= 0 && index < this.recommendations.length) {
         const rec = this.recommendations[index]
         this.currentIndex = index
-        // 转换用户数据格式
+        console.log('推荐对象原始数据:', rec)
+        // 转换用户数据格式，使用多个备选字段
         this.matchResult = {
           id: rec.id,
           name: rec.username || rec.name || '未知',
           gender: rec.gender === 1 ? '男' : (rec.gender === 2 ? '女' : ''),
           education: this.getEducationFromGrade(rec.grade),
-          majorCategory: rec.major_category || '',
-          college: rec.academy?.name || '',
+          majorCategory: rec.major_category || rec.majorCategory || '',
+          college: rec.academy?.name || rec.academy_name || rec.college || '',
           avatar: rec.avatar || ''
         }
+        console.log('更新后的匹配结果:', this.matchResult)
       }
     },
     getEducationFromGrade(grade) {
       if (!grade) return ''
       return grade <= 4 ? '本科生' : (grade <= 6 ? '研究生' : '')
+    },
+    handleAvatarError(e) {
+      console.error('头像加载失败:', e)
+      // 头像加载失败时，清空 avatar，显示占位符
+      this.matchResult.avatar = ''
     },
     // 返回期望填写界面
     backToExpectation() {
@@ -296,10 +346,37 @@ export default {
     },
     // 处理组队确认
     async handleConfirmTeam() {
-      if (!this.matchResult.id) {
+      // 检查是否有有效的匹配对象
+      if (!this.matchResult || !this.matchResult.id) {
         uni.showToast({
-          title: '请先选择匹配对象',
-          icon: 'none'
+          title: '暂无匹配对象，无法组队',
+          icon: 'none',
+          duration: 2000
+        })
+        return
+      }
+      
+      // 如果已经匹配成功，直接跳转到打卡页面
+      if (this.isAlreadyMatched) {
+        console.log('已经匹配成功，直接跳转到打卡页面')
+        uni.switchTab({
+          url: '/pages/checkin-detail/index',
+          fail: (err) => {
+            console.warn('switchTab失败，尝试reLaunch:', err)
+            uni.reLaunch({ url: '/pages/checkin-detail/index' })
+          }
+        })
+        return
+      }
+      
+      // 如果推荐列表为空，但 matchResult.id 存在，说明可能是已经匹配成功的情况
+      // 这种情况下允许继续操作（已经匹配成功时，推荐列表为空是正常的）
+      // 只有在既没有推荐列表，又没有有效匹配对象ID时才提示错误
+      if ((!this.recommendations || this.recommendations.length === 0) && !this.matchResult.id) {
+        uni.showToast({
+          title: '暂无匹配对象，无法组队',
+          icon: 'none',
+          duration: 2000
         })
         return
       }
@@ -328,12 +405,21 @@ export default {
         this.showWaitModal = false
         console.error('组队失败:', error)
         
-        // 开发阶段：如果是无效URL错误，模拟成功
+        // 开发阶段：如果是无效URL错误，需要检查是否有有效的匹配对象ID
         if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
-          console.log('开发阶段：API未配置，模拟组队成功')
-          this.successType = 'team-success'
-          this.successTitle = '组队成功！'
-          this.showSuccessModal = true
+          // 开发阶段：只有在有有效匹配对象ID时才模拟成功
+          if (this.matchResult && this.matchResult.id) {
+            console.log('开发阶段：API未配置，模拟组队成功')
+            this.successType = 'team-success'
+            this.successTitle = '组队成功！'
+            this.showSuccessModal = true
+          } else {
+            uni.showToast({
+              title: '暂无匹配对象，无法组队',
+              icon: 'none',
+              duration: 2000
+            })
+          }
         } else {
           uni.showToast({
             title: error.message || '组队失败，请重试',
@@ -692,7 +778,11 @@ export default {
 
 /* 队友信息区域 */
 .teammate-info {
-  display: none; /* 暂时隐藏详细信息，根据设计稿调整 */
+  display: flex;
+  flex-direction: column;
+  padding: 120rpx 40rpx 40rpx; /* 顶部留出头像空间 */
+  height: 100%;
+  box-sizing: border-box;
 }
 
 .info-item {
@@ -800,6 +890,12 @@ export default {
   font-size: 32rpx; /* 对应16px */
   font-weight: 400;
   color: #FFFFFF;
+}
+
+.confirm-btn.disabled-btn {
+  opacity: 0.5;
+  pointer-events: none;
+  background: #CCCCCC !important;
 }
 
 /* 等待组队弹窗 */

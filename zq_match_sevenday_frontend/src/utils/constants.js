@@ -49,8 +49,6 @@ export const MAJOR_CATEGORY_OPTIONS = [
 ]
 
 // API 接口前缀
-// TODO: 替换为实际后端API地址
-// 开发阶段：可以设置为空字符串 '' 或占位URL
 // 正式环境：设置为实际后端服务器地址
-export const API_BASE_URL = 'http://localhost:8000'// 空字符串表示使用相对路径，或者设置为完整URL如 'https://api.example.com/api'
+export const API_BASE_URL = 'http://127.0.0.1:8000'// 空字符串表示使用相对路径，或者设置为完整URL如 'https://api.example.com/api'
 
