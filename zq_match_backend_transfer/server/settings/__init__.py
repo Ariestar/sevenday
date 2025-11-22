@@ -1,8 +1,3 @@
-import pymysql
-pymysql.install_as_MySQLdb()
-
-
-
 import sys
 from os import environ
 from pathlib import Path
