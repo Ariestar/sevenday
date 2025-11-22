@@ -4,7 +4,7 @@
     <view class="user-info-card">
       <view class="avatar-container" @click="handleAvatarClick">
         <image 
-          v-if="userInfo.avatar" 
+          v-if="userInfo.avatar && !userInfo.avatar.includes('default.jpg')" 
           :src="userInfo.avatar" 
           class="user-avatar" 
           mode="aspectFill"
@@ -27,7 +27,7 @@
       <view v-else class="user-status-section">
         <view class="user-welcome">
           <text class="welcome-text">欢迎回来！</text>
-          <text class="user-name">{{ userInfo.name || '用户' }}</text>
+          <text class="user-name">{{ userInfo.name || userInfo.username || '用户' }}</text>
         </view>
         <view class="user-badge">
           <text class="badge-text">已认证</text>
@@ -152,7 +152,12 @@ export default {
       // 登录成功后，强制从服务器重新加载用户信息以确保数据最新
       await this.loadUserInfo(true) // 强制刷新
       this.loginModalVisible = false
-      // 注意：LoginModal 已经显示了"登录成功"的提示，这里不需要重复显示
+      // 登录成功后跳转到个人信息页面
+      setTimeout(() => {
+        uni.navigateTo({
+          url: '/pages/personal-info/index'
+        })
+      }, 500) // 延迟500ms，让登录成功提示先显示
     },
     
     handleAvatarClick() {

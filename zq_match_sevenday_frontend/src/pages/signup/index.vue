@@ -24,7 +24,7 @@
     <!-- 头像区域 -->
     <view class="avatar-section">
       <view class="avatar-container" @click="chooseAvatar">
-        <image v-if="formData.avatar" :src="formData.avatar" class="avatar-image" mode="aspectFill" />
+        <image v-if="formData.avatar && !formData.avatar.includes('default.jpg')" :src="formData.avatar" class="avatar-image" mode="aspectFill" />
         <view v-else class="avatar-placeholder">
           <text class="avatar-plus">+</text>
         </view>
@@ -497,49 +497,27 @@ export default {
     handleSuccessClose() {
       this.showSuccessModal = false
       
-      // 简化跳转逻辑，根据报名类型跳转到不同页面
-      const targetUrl = this.pendingSignupType === 'single' 
-        ? '/pages/single-match/index'    // 单人匹配页面
-        : '/pages/multiple-match/index'  // 多人匹配页面（tabBar页面）
-      
-      console.log(`报名类型: ${this.pendingSignupType}, 跳转到: ${targetUrl}`)
-      
+      // 统一跳转到多人匹配页面（tabBar页面）
       setTimeout(() => {
-        if (this.pendingSignupType === 'single') {
-          // 单人匹配页面 - 使用 reLaunch 重启应用到目标页面
-          uni.reLaunch({
-            url: targetUrl,
-            success: () => {
-              console.log('跳转到单人匹配页面成功')
-            },
-            fail: (err) => {
-              console.warn('跳转失败:', err)
-              // 开发者工具中可能会失败，这是正常的
-              console.log('如果在开发工具中跳转失败，请手动切换到单人匹配页面')
-            }
-          })
-        } else {
-          // 组队匹配页面 - TabBar页面，使用 switchTab
-          uni.switchTab({
-            url: targetUrl,
-            success: () => {
-              console.log('跳转到组队匹配页面成功')
-            },
-            fail: (err) => {
-              console.warn('switchTab失败，尝试reLaunch:', err)
-              uni.reLaunch({
-                url: targetUrl,
-                success: () => {
-                  console.log('reLaunch到组队匹配页面成功')
-                },
-                fail: (err2) => {
-                  console.warn('跳转失败:', err2)
-                  console.log('如果在开发工具中跳转失败，请手动切换到匹配页面')
-                }
-              })
-            }
-          })
-        }
+        uni.switchTab({
+          url: '/pages/multiple-match/index',
+          success: () => {
+            console.log('跳转到组队匹配页面成功')
+          },
+          fail: (err) => {
+            console.warn('switchTab失败，尝试reLaunch:', err)
+            uni.reLaunch({
+              url: '/pages/multiple-match/index',
+              success: () => {
+                console.log('reLaunch到组队匹配页面成功')
+              },
+              fail: (err2) => {
+                console.warn('跳转失败:', err2)
+                console.log('如果在开发工具中跳转失败，请手动切换到匹配页面')
+              }
+            })
+          }
+        })
       }, 300)
     },
     goToMatch() {
@@ -832,6 +810,13 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  line-height: 64rpx;
+  padding: 0;
+  margin: 0;
+}
+
+.cancel-btn::after {
+  border: none;
 }
 
 .save-btn {
@@ -845,6 +830,13 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
+  line-height: 64rpx;
+  padding: 0;
+  margin: 0;
+}
+
+.save-btn::after {
+  border: none;
 }
 
 /* 表单容器 - 精确按Figma设计 */
