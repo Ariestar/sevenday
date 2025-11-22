@@ -95,7 +95,7 @@
         <!-- 院系 -->
         <view class="form-row">
           <text class="form-label">院系</text>
-          <picker mode="selector" :range="academyOptions" range-key="name" @change="onAcademyChange" @click="onAcademyPickerClick">
+          <picker mode="selector" :range="academyOptions" range-key="name" @change="onAcademyChange">
             <view class="form-input-field">
               <text :class="{'placeholder': !formData.college}">
                 {{ getAcademyName(formData.college) || '请选择' }}
@@ -163,6 +163,7 @@
 <script>
 import { GENDER_OPTIONS, DEGREE_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
 import { submitSignup, getSignupDetail, cancelSignup, updateSignup } from '../../services/signup'
+import { getTeamInfo } from '../../services/match'
 import { updateUserInfo } from '../../services/auth'
 import { uploadAvatar } from '../../services/upload'
 import { getAcademies } from '../../services/academies'
@@ -216,6 +217,7 @@ export default {
   onShow() {
     // 触发TabBar更新，确保选中状态正确
     uni.$emit('tabbar-update')
+    this.checkTeamStatus()
   },
   methods: {
     async loadSignupDetail() {
@@ -281,27 +283,12 @@ export default {
       const index = e.detail.value
       this.formData.majorCategory = this.majorOptions[index].value
     },
-    onAcademyPickerClick() {
-      console.log('🎯 [signup] 院系选择器被点击')
-      console.log('🎯 [signup] 当前 academyOptions 数量:', this.academyOptions.length)
-      console.log('🎯 [signup] academyOptions 内容:', this.academyOptions)
-      if (this.academyOptions.length === 0) {
-        console.warn('⚠️ [signup] academyOptions 为空，picker 无法显示选项，尝试重新加载...')
-        // 如果选项为空，尝试重新加载
-        this.loadAcademies()
-      }
-    },
     onAcademyChange(e) {
-      console.log('🎯 [signup] 院系选择改变:', e.detail.value)
       const index = e.detail.value
       const academy = this.academyOptions[index]
-      console.log('🎯 [signup] 选中的院系:', academy)
       if (academy) {
         this.formData.college = academy.name
         this.formData.academyId = academy.id // 保存院系ID
-        console.log('🎯 [signup] 设置院系为:', academy.name)
-      } else {
-        console.warn('⚠️ [signup] 未找到对应的院系，index:', index, 'academyOptions 长度:', this.academyOptions.length)
       }
     },
     getAcademyName(value) {
@@ -311,85 +298,25 @@ export default {
       return academy ? academy.name : value
     },
     async loadAcademies() {
-      console.log('📚 [signup] ========== 开始加载院系列表 ==========')
-      console.log('📚 [signup] 当前 academyOptions 状态:', this.academyOptions)
       try {
         const academies = await getAcademies()
-        console.log('📚 [signup] getAcademies() 返回的数据:', academies)
-        console.log('📚 [signup] 数据类型:', typeof academies)
-        console.log('📚 [signup] 是否为数组:', Array.isArray(academies))
-        console.log('📚 [signup] 数组长度:', Array.isArray(academies) ? academies.length : 'N/A')
-        
-        // 检查返回的数据
-        if (!academies || !Array.isArray(academies) || academies.length === 0) {
-          console.warn('⚠️ [signup] 院系列表为空或格式不正确:', academies)
-          console.warn('⚠️ [signup] academies 类型:', typeof academies)
-          console.warn('⚠️ [signup] academies 是否为 null:', academies === null)
-          console.warn('⚠️ [signup] academies 是否为 undefined:', academies === undefined)
-          this.academyOptions = []
-          return
-        }
-        
         // 将嵌套的院系数据扁平化，包含父级和子级
-        console.log('📚 [signup] 开始扁平化院系数据...')
         const flatAcademies = []
-        academies.forEach((parent, index) => {
-          console.log(`📚 [signup] 处理第 ${index + 1} 个父级院系:`, parent)
-          // 检查父级院系数据
-          if (parent && (parent.name || parent.id)) {
-            // 添加父级院系
-            flatAcademies.push({ 
-              id: parent.id || `parent-${flatAcademies.length}`, 
-              name: parent.name || '未命名院系' 
+        academies.forEach(parent => {
+          // 添加父级院系
+          flatAcademies.push({ id: parent.id, name: parent.name })
+          // 添加子级院系
+          if (parent.children && parent.children.length > 0) {
+            parent.children.forEach(child => {
+              flatAcademies.push({ id: child.id, name: child.name })
             })
-            console.log(`📚 [signup] 添加父级院系: ${parent.name}`)
-            
-            // 添加子级院系
-            if (parent.children && Array.isArray(parent.children) && parent.children.length > 0) {
-              console.log(`📚 [signup] 父级院系 ${parent.name} 有 ${parent.children.length} 个子级院系`)
-              parent.children.forEach((child, childIndex) => {
-                if (child && (child.name || child.id)) {
-                  flatAcademies.push({ 
-                    id: child.id || `child-${flatAcademies.length}`, 
-                    name: child.name || '未命名子院系' 
-                  })
-                  console.log(`📚 [signup] 添加子级院系: ${child.name}`)
-                } else {
-                  console.warn(`⚠️ [signup] 跳过无效的子级院系 ${childIndex + 1}:`, child)
-                }
-              })
-            } else {
-              console.log(`📚 [signup] 父级院系 ${parent.name} 没有子级院系`)
-            }
-          } else {
-            console.warn(`⚠️ [signup] 跳过无效的父级院系 ${index + 1}:`, parent)
           }
         })
-        
-        console.log('📚 [signup] ========== 扁平化完成 ==========')
-        console.log('📚 [signup] 扁平化后的院系选项数量:', flatAcademies.length)
-        console.log('📚 [signup] 扁平化后的院系选项:', flatAcademies)
         this.academyOptions = flatAcademies
-        console.log('📚 [signup] ✓ academyOptions 已更新')
-        
-        if (flatAcademies.length === 0) {
-          console.warn('⚠️ [signup] 院系选项为空，picker将无法显示选项')
-          console.warn('⚠️ [signup] 请检查后端返回的数据格式')
-        } else {
-          console.log('✅ [signup] 院系选项加载成功，共', flatAcademies.length, '个选项')
-        }
       } catch (err) {
-        console.error('❌ [signup] ========== 加载院系列表失败 ==========')
-        console.error('❌ [signup] 错误对象:', err)
-        console.error('❌ [signup] 错误详情:', {
-          message: err?.message,
-          errMsg: err?.errMsg,
-          stack: err?.stack,
-          toString: String(err)
-        })
+        console.error('加载院系列表失败:', err)
         // 如果API调用失败，使用空数组，不影响页面显示
         this.academyOptions = []
-        console.warn('⚠️ [signup] academyOptions 已设置为空数组')
       }
     },
     getGenderLabel(value) {
@@ -663,66 +590,28 @@ export default {
     handleSuccessClose() {
       this.showSuccessModal = false
       
-      // 根据选择的报名类型跳转到不同页面
-      const signupType = this.pendingSignupType
-      console.log('📋 关闭成功弹窗，报名类型:', signupType)
-      
+      // 统一跳转到多人匹配页面（tabBar页面）
       setTimeout(() => {
-        if (signupType === 'single') {
-          // 选择"单人"，跳转到单人匹配页面
-          console.log('📋 跳转到单人匹配页面')
-          uni.navigateTo({
-            url: '/pages/single-match/index',
-            success: () => {
-              console.log('✅ 跳转到单人匹配页面成功')
-            },
-            fail: (err) => {
-              console.warn('❌ navigateTo失败，尝试reLaunch:', err)
-              uni.reLaunch({
-                url: '/pages/single-match/index',
-                success: () => {
-                  console.log('✅ reLaunch到单人匹配页面成功')
-                },
-                fail: (err2) => {
-                  console.warn('❌ 跳转失败:', err2)
-                  uni.showToast({
-                    title: '跳转失败，请手动切换到匹配页面',
-                    icon: 'none'
-                  })
-                }
-              })
-            }
-          })
-        } else {
-          // 选择"组队"，跳转到多人匹配页面（tabBar页面）
-          console.log('📋 跳转到组队匹配页面')
-          uni.switchTab({
-            url: '/pages/multiple-match/index',
-            success: () => {
-              console.log('✅ 跳转到组队匹配页面成功')
-            },
-            fail: (err) => {
-              console.warn('❌ switchTab失败，尝试reLaunch:', err)
-              uni.reLaunch({
-                url: '/pages/multiple-match/index',
-                success: () => {
-                  console.log('✅ reLaunch到组队匹配页面成功')
-                },
-                fail: (err2) => {
-                  console.warn('❌ 跳转失败:', err2)
-                  uni.showToast({
-                    title: '跳转失败，请手动切换到匹配页面',
-                    icon: 'none'
-                  })
-                }
-              })
-            }
-          })
-        }
+        uni.switchTab({
+          url: '/pages/multiple-match/index',
+          success: () => {
+            console.log('跳转到组队匹配页面成功')
+          },
+          fail: (err) => {
+            console.warn('switchTab失败，尝试reLaunch:', err)
+            uni.reLaunch({
+              url: '/pages/multiple-match/index',
+              success: () => {
+                console.log('reLaunch到组队匹配页面成功')
+              },
+              fail: (err2) => {
+                console.warn('跳转失败:', err2)
+                console.log('如果在开发工具中跳转失败，请手动切换到匹配页面')
+              }
+            })
+          }
+        })
       }, 300)
-      
-      // 重置报名类型，以便下次使用
-      this.pendingSignupType = null
     },
     goToMatch() {
       uni.switchTab({
@@ -787,6 +676,32 @@ export default {
             }
           }
         }
+      })
+    },
+    async checkTeamStatus() {
+      try {
+        // Check local storage first
+        const localHasTeam = uni.getStorageSync('hasTeam')
+        if (localHasTeam) {
+          this.redirectToMatch()
+          return
+        }
+        
+        // Check API
+        const res = await getTeamInfo()
+        if (res && res.team) {
+          uni.setStorageSync('hasTeam', true)
+          this.redirectToMatch()
+        } else {
+          uni.removeStorageSync('hasTeam')
+        }
+      } catch (err) {
+        console.error('Check team status failed:', err)
+      }
+    },
+    redirectToMatch() {
+      uni.switchTab({
+        url: '/pages/multiple-match/index'
       })
     }
   }

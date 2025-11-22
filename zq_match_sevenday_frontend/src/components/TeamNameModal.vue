@@ -102,8 +102,8 @@ export default {
   bottom: 0;
   z-index: 9999;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
 }
 
 .modal-overlay {
@@ -112,62 +112,115 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
+}
+
+/* 顶部背景区域 */
+.header-background {
+  position: relative;
+  width: 100%;
+  height: 156rpx; /* 对应78px */
+  z-index: 10;
+}
+
+.banner-background {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-image: url('/static/checkin/checkin-part1-banner-background.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.header-tabs {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 10;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20rpx 60rpx; /* 对应10px 30px */
+  margin-top: 80rpx;
+}
+
+.tab-item.active {
+  background: linear-gradient(180deg, #F7E8FE 0%, #F9ECFF 100%);
+  border-radius: 90rpx; /* 对应45px */
+  box-shadow: 0 4rpx 12rpx rgba(161, 0, 254, 0.3);
+}
+
+.tab-text {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 32rpx; /* 对应16px */
+  line-height: 38rpx; /* 对应19px */
+  color: #000000;
+}
+
+.tab-item.active .tab-text {
+  font-weight: 700;
 }
 
 .modal-content {
   position: relative;
   width: 620rpx; /* 对应310px */
   background: #FFFFFF;
-  border-radius: 24rpx; /* 对应12px */
-  padding: 80rpx 40rpx 40rpx; /* 对应40px 20px 20px */
-  margin: 0 40rpx;
+  border-radius: 24rpx; /* 四个角圆角 */
+  padding: 60rpx 40rpx 40rpx; /* 对应30px 20px 20px */
+  margin: 0 auto;
+  margin-top: 200rpx; /* 增加间距，使内容块下移 */
   box-sizing: border-box;
-  text-align: center;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.15); /* 添加阴影效果 */
+  z-index: 5;
 }
 
 /* 标题区域 */
 .modal-header {
+  text-align: center;
   margin-bottom: 60rpx; /* 对应30px */
 }
 
 .modal-title {
   font-family: 'Inter';
-  font-weight: 700;
-  font-size: 40rpx; /* 对应20px */
-  line-height: 48rpx; /* 对应24px */
+  font-weight: 400;
+  font-size: 55rpx; /* 对应18px */
+  line-height: 44rpx; /* 对应22px */
   color: #1F2635;
   display: block;
-  margin-bottom: 30rpx; /* 对应15px */
+  margin-bottom: 20rpx; /* 对应10px */
 }
 
 .modal-subtitle {
   font-family: 'Inter';
   font-weight: 400;
   font-size: 28rpx; /* 对应14px */
-  line-height: 34rpx; /* 对应17px */
+  line-height: 40rpx; /* 增加行高 */
   color: #9094A6;
   display: block;
+  margin-bottom: 8rpx;
 }
 
 /* 输入区域 */
 .input-section {
-  margin-bottom: 60rpx; /* 输入框和按钮之间的间距 */
-  display: flex;
-  justify-content: center;
-  width: 100%;
-}
-
-.input-wrapper {
   position: relative;
-  width: 100%;
-  max-width: 540rpx;
+  margin-bottom: 60rpx; /* 输入框和按钮之间的间距 */
 }
 
 .team-name-input {
-  width: 100%;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400rpx;
   height: 96rpx; /* 对应48px */
-  padding: 0 80rpx 0 24rpx; /* 右侧留出字符计数空间 */
+  padding: 0 24rpx; /* 对应0 12px */
   background: #FFFFFF;
   border: 4rpx solid #c05af3; /* 紫色边框 */
   border-radius: 180rpx; /* 圆角 */
@@ -194,7 +247,6 @@ export default {
   font-size: 24rpx;
   color: #9094A6;
   pointer-events: none;
-  z-index: 1;
 }
 
 

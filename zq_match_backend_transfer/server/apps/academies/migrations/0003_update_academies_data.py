@@ -21,13 +21,13 @@ def load_fixture(apps, schema_editor):
         fields = item.get('fields', {})
         name = fields.get('name')
         level = fields.get('level', 0)
-        # Note: logo field removed as it's not in the model
+        logo = fields.get('logo', '')
         pid = fields.get('pid')
 
         defaults = {
             'name': name,
             'level': level,
-            # Note: logo field not in model, removed from defaults
+            'logo': logo,
         }
         # set parent if provided
         if pid is None:

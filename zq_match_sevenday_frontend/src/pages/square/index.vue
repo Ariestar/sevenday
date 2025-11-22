@@ -161,130 +161,30 @@ export default {
     }
   },
   onLoad() {
-    console.log('square页面 onLoad')
-    try {
-      // 监听广场数据更新
-      uni.$on('square-updated', this.handleSquareUpdate)
-      // 初始化模拟数据（仅在没有本地数据时，用于开发阶段）
-      this.initMockData()
-    } catch (e) {
-      console.error('square页面 onLoad 错误:', e)
-    }
+    // 监听广场数据更新
+    uni.$on('square-updated', this.handleSquareUpdate)
+    // 加载真实数据
+    this.loadData()
   },
   onUnload() {
     // 移除事件监听
     uni.$off('square-updated', this.handleSquareUpdate)
   },
   onShow() {
-    console.log('square页面 onShow')
-    try {
-      // 触发TabBar更新，确保选中状态正确
-      uni.$emit('tabbar-update')
-      // 异步刷新数据，不阻塞页面渲染
-      this.refreshData().catch(err => {
-        console.error('刷新数据失败:', err)
-        // 即使刷新失败，也要确保页面能正常显示
-      })
-    } catch (e) {
-      console.error('square页面 onShow 错误:', e)
-    }
+    this.refreshData()
+    // 触发TabBar更新，确保选中状态正确
+    uni.$emit('tabbar-update')
   },
   onPullDownRefresh() {
     this.refreshData()
   },
   methods: {
-    initMockData() {
-      try {
-        // 仅在开发阶段：如果没有本地数据，创建一些模拟数据用于展示
-        const existingPosts = uni.getStorageSync('squarePosts') || []
-        if (existingPosts.length > 0) {
-          return // 已有数据，不需要初始化
-        }
-      } catch (e) {
-        console.error('initMockData 读取存储失败:', e)
-        return
-      }
-      
-      // 创建模拟数据（仅用于开发/演示）
-      const mockPosts = [
-        {
-          id: 'mock-1',
-          day: 1,
-          taskName: '早起锻炼',
-          content: '今天早上6点起床，在公园跑了5公里，感觉精神状态特别好！坚持就是胜利💪',
-          images: [],
-          teamName: '早起鸟队',
-          createdAt: Date.now() - 2 * 60 * 60 * 1000, // 2小时前
-          updatedAt: Date.now() - 2 * 60 * 60 * 1000,
-          likeCount: 12,
-          commentCount: 3,
-          viewCount: 45,
-          isLiked: false,
-          comments: [],
-          latestCommentTime: null,
-          avatar1: '/static/square/user-icon.png',
-          avatar2: '/static/square/user-icon.png'
-        },
-        {
-          id: 'mock-2',
-          day: 3,
-          taskName: '健康饮食',
-          content: '今天准备了营养丰富的早餐：燕麦粥配水果，还有一杯豆浆。健康生活从每一餐开始！',
-          images: [],
-          teamName: '健康生活队',
-          createdAt: Date.now() - 5 * 60 * 60 * 1000, // 5小时前
-          updatedAt: Date.now() - 5 * 60 * 60 * 1000,
-          likeCount: 8,
-          commentCount: 1,
-          viewCount: 32,
-          isLiked: true,
-          comments: [],
-          latestCommentTime: null,
-          avatar1: '/static/square/user-icon.png',
-          avatar2: '/static/square/user-icon.png'
-        },
-        {
-          id: 'mock-3',
-          day: 2,
-          taskName: '阅读学习',
-          content: '今天读了《高效能人士的七个习惯》第二章，收获很多。知识就是力量，学习永无止境📚',
-          images: [],
-          teamName: '学霸联盟',
-          createdAt: Date.now() - 1 * 24 * 60 * 60 * 1000, // 1天前
-          updatedAt: Date.now() - 1 * 24 * 60 * 60 * 1000,
-          likeCount: 15,
-          commentCount: 5,
-          viewCount: 68,
-          isLiked: false,
-          comments: [],
-          latestCommentTime: Date.now() - 3 * 60 * 60 * 1000, // 3小时前有评论
-          avatar1: '/static/square/user-icon.png',
-          avatar2: '/static/square/user-icon.png'
-        }
-      ]
-      
-      // 保存到本地存储
-      uni.setStorageSync('squarePosts', mockPosts)
-      console.log('已初始化模拟打卡数据（开发阶段）')
-    },
     async refreshData() {
       this.page = 1
       this.hasMore = true
-      // 先显示本地数据，确保页面能立即渲染
-      const localPosts = uni.getStorageSync('squarePosts') || []
-      if (localPosts.length > 0) {
-        this.allPosts = localPosts
-        this.postList = localPosts.slice(0, this.pageSize)
-      } else {
-        this.postList = []
-        this.allPosts = []
-      }
-      // 然后异步加载最新数据
-      try {
-        await this.loadData()
-      } catch (err) {
-        console.error('加载数据失败:', err)
-      }
+      this.postList = []
+      this.allPosts = []
+      await this.loadData()
       uni.stopPullDownRefresh()
     },
     async loadData() {
@@ -292,24 +192,14 @@ export default {
 
       this.loading = true
       try {
-        // 优先从本地存储获取数据（用于离线查看和快速显示）
-        const localPosts = uni.getStorageSync('squarePosts') || []
-        let result = { list: [] }
-        
-        try {
-          // 尝试从服务端获取真实数据
-          result = await getSquareList(this.page, this.pageSize)
-          console.log('📋 获取到的广场数据:', result)
-        } catch (err) {
-          // 如果服务端请求失败，使用本地数据（容错处理）
-          console.warn('获取服务端数据失败，使用本地数据:', err)
-          // 不显示错误提示，静默失败，使用本地数据
-        }
+        // 从服务端获取真实数据
+        const result = await getSquareList(this.page, this.pageSize)
+        console.log('📋 获取到的广场数据:', result)
         
         const serverPosts = result.list || []
         
-        // 转换服务端数据格式以匹配前端显示需求
-        const formattedServerPosts = serverPosts.map(post => {
+        // 转换数据格式以匹配前端显示需求
+        const formattedPosts = serverPosts.map(post => {
           // 从title中提取天数，例如"第1天打卡"
           let day = 1
           if (post.title) {
@@ -342,59 +232,26 @@ export default {
         })
         
         if (this.page === 1) {
-          // 第一页：合并本地数据和服务端数据（服务端数据优先）
-          let mergedPosts = []
-          if (formattedServerPosts.length > 0) {
-            // 有服务端数据时，优先使用服务端数据，并合并本地数据（避免重复）
-            const serverIds = new Set(formattedServerPosts.map(p => p.id))
-            const localOnlyPosts = localPosts.filter(p => !serverIds.has(p.id))
-            mergedPosts = [...formattedServerPosts, ...localOnlyPosts]
-          } else {
-            // 没有服务端数据时，使用本地数据
-            mergedPosts = [...localPosts]
-          }
-          
-          // 去重并排序
-          const uniquePosts = this.removeDuplicates(mergedPosts)
-          const sortedPosts = this.sortPosts(uniquePosts)
-          
-          this.allPosts = sortedPosts
-          this.postList = sortedPosts.slice(0, this.pageSize)
-          
-          // 更新本地存储（优先保存服务端数据）
-          if (formattedServerPosts.length > 0) {
-            uni.setStorageSync('squarePosts', sortedPosts)
-          }
-          
-          // 判断是否还有更多数据
-          this.hasMore = formattedServerPosts.length >= this.pageSize || this.postList.length < this.allPosts.length
+          this.allPosts = formattedPosts
+          this.postList = formattedPosts.slice(0, this.pageSize)
         } else {
-          // 后续页面：直接追加服务端数据
-          if (formattedServerPosts.length > 0) {
-            // 去重：避免追加已存在的数据
-            const existingIds = new Set(this.allPosts.map(p => p.id))
-            const newPosts = formattedServerPosts.filter(p => !existingIds.has(p.id))
-            
-            if (newPosts.length > 0) {
-              // 追加到全部数据列表并重新排序
-              this.allPosts = this.sortPosts([...this.allPosts, ...newPosts])
-              
-              // 追加到显示列表
-              this.postList.push(...newPosts)
-            }
-            
-            // 判断是否还有更多数据
-            this.hasMore = formattedServerPosts.length >= this.pageSize
-          } else {
-            // 没有更多服务端数据
-            this.hasMore = false
-          }
+          this.postList.push(...formattedPosts)
         }
-        
+
+        // 判断是否还有更多数据
+        this.hasMore = formattedPosts.length >= this.pageSize
         this.page++
+        
+        // 更新本地存储（用于离线查看）
+        if (this.page === 2) { // 第一页加载完成后保存
+          uni.setStorageSync('squarePosts', this.allPosts)
+        }
       } catch (err) {
         console.error('加载广场列表失败:', err)
-        // 即使出错也不显示错误提示，使用本地数据
+        uni.showToast({
+          title: '加载失败，请稍后重试',
+          icon: 'none'
+        })
       } finally {
         this.loading = false
       }
@@ -434,34 +291,21 @@ export default {
       this.hasMore = this.postList.length < this.allPosts.length
     },
     handleSquareUpdate() {
-      // 广场数据更新时刷新列表
-      try {
-        this.refreshData()
-      } catch (e) {
-        console.error('handleSquareUpdate 错误:', e)
-      }
+      // 广场数据更新时刷新列表（从服务器重新加载）
+      this.refreshData()
     },
     loadMore() {
-      // 如果还有更多数据且未在加载中，则继续加载
-      if (this.hasMore && !this.loading) {
-        // 如果本地数据已经加载完，尝试从服务端加载下一页
-        const remainingLocalPosts = this.allPosts.length - this.postList.length
-        if (remainingLocalPosts > 0) {
-          // 从本地数据中加载更多
-          const startIndex = this.postList.length
-          const endIndex = startIndex + this.pageSize
-          const morePosts = this.allPosts.slice(startIndex, endIndex)
-          
-          if (morePosts.length > 0) {
-            this.postList.push(...morePosts)
-            this.hasMore = this.postList.length < this.allPosts.length
-          } else {
-            this.hasMore = false
-          }
-        } else {
-          // 本地数据已用完，从服务端加载下一页
-          this.loadData()
-        }
+      if (!this.hasMore || this.loading) return
+      
+      const startIndex = this.postList.length
+      const endIndex = startIndex + this.pageSize
+      const morePosts = this.allPosts.slice(startIndex, endIndex)
+      
+      if (morePosts.length > 0) {
+        this.postList.push(...morePosts)
+        this.hasMore = this.postList.length < this.allPosts.length
+      } else {
+        this.hasMore = false
       }
     },
     async handleLike(post) {

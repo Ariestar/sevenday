@@ -38,23 +38,23 @@
       <view class="teammate-info">
         <view class="info-item">
           <text class="info-label">姓名：</text>
-          <text class="info-value">{{ matchResult.name || '张同学' }}</text>
+          <text class="info-value">{{ matchResult.name}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">性别：</text>
-          <text class="info-value">{{ matchResult.gender || '女' }}</text>
+          <text class="info-value">{{ matchResult.gender}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">学历：</text>
-          <text class="info-value">{{ matchResult.education || '本科生' }}</text>
+          <text class="info-value">{{ matchResult.education}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">大类：</text>
-          <text class="info-value">{{ matchResult.majorCategory || '工科' }}</text>
+          <text class="info-value">{{ matchResult.majorCategory}}</text>
         </view>
         <view class="info-item">
           <text class="info-label">院系：</text>
-          <text class="info-value">{{ matchResult.college || '计算机学院' }}</text>
+          <text class="info-value">{{ matchResult.college  }}</text>
         </view>
       </view>
     </view>
@@ -163,7 +163,6 @@ import SuccessModal from '../../components/SuccessModal.vue'
 import { recommendMatches, confirmMatch, rejectMatch } from '../../services/match'
 import { getUserInfo } from '../../services/auth'
 import authUtils from '../../utils/auth'
-import { getSignupDetail } from '../../services/signup'
 
 export default {
   components: {
@@ -196,39 +195,14 @@ export default {
     // 从上一个页面接收匹配结果数据（如果有）
     if (options.matchData) {
       try {
-        const parsedData = JSON.parse(decodeURIComponent(options.matchData))
-        this.matchResult = {
-          ...this.matchResult,
-          ...parsedData
-        }
-        console.log('✅ 从URL参数中接收到匹配数据:', this.matchResult)
+        this.matchResult = JSON.parse(decodeURIComponent(options.matchData))
       } catch (error) {
-        console.error('❌ 解析匹配数据失败:', error)
+        console.error('解析匹配数据失败:', error)
       }
     }
     
-    // 如果没有匹配数据或数据为空，设置默认数据（用于展示）
-    if (!this.matchResult.name || this.matchResult.name === '暂无匹配对象') {
-      console.log('⚠️ 没有有效的匹配数据，使用默认数据')
-      this.matchResult = {
-        id: null,
-        name: '张同学',
-        gender: '女',
-        education: '本科生',
-        majorCategory: '工科',
-        college: '计算机学院',
-        avatar: ''
-      }
-    }
-    
-    // 加载推荐匹配对象（如果从URL参数接收到数据，这个函数可能会覆盖它）
-    // 但如果URL参数中有数据，说明是从"开始匹配"跳转过来的，应该优先使用URL参数的数据
-    // 只有在URL参数中没有数据时，才从API加载
-    if (!options.matchData) {
-      this.loadRecommendations()
-    } else {
-      console.log('✅ 已有匹配数据，跳过API加载')
-    }
+    // 加载推荐匹配对象
+    this.loadRecommendations()
   },
   methods: {
     async loadRecommendations() {
@@ -474,111 +448,46 @@ export default {
         this.showWaitModal = true
         
         // 调用确认组队API
-        let confirmResult = null
-        try {
-          confirmResult = await confirmMatch({ userId: this.matchResult.id })
-          console.log('确认组队成功:', confirmResult)
-        } catch (apiError) {
-          console.error('确认组队API调用失败:', apiError)
-          // 开发阶段：如果是无效URL错误，继续流程
-          if (!apiError.errMsg?.includes('invalid url') && apiError.errno !== 600009) {
-            throw apiError
-          }
-        }
+        const result = await confirmMatch({ userId: this.matchResult.id })
+        console.log('确认组队成功:', result)
         
         // 隐藏等待弹窗
         this.showWaitModal = false
         
-        // 获取我的信息
-        let myInfo = {
-          gender: '男',
-          education: '本科生',
-          majorCategory: '理科',
-          college: '物理学院',
-          qq: '123456',
-          avatar: ''
-        }
+        // 显示成功提示
+        this.successType = 'team-success'
+        this.successTitle = '组队成功！'
+        this.showSuccessModal = true
         
-        try {
-          const signupDetail = await getSignupDetail()
-          if (signupDetail) {
-            // 转换性别格式
-            let gender = signupDetail.gender
-            if (gender === 'male' || gender === 'MALE' || gender === 1) {
-              gender = '男'
-            } else if (gender === 'female' || gender === 'FEMALE' || gender === 2) {
-              gender = '女'
-            }
-            
-            // 转换学历格式
-            let education = signupDetail.degree
-            if (education === 'undergraduate' || education === 'UNDERGRADUATE') {
-              education = '本科生'
-            } else if (education === 'postgraduate' || education === 'POSTGRADUATE' || education === 'GRADUATE') {
-              education = '研究生'
-            }
-            
-            myInfo = {
-              gender: gender || '男',
-              education: education || '本科生',
-              majorCategory: signupDetail.majorCategory || '理科',
-              college: signupDetail.college || '物理学院',
-              qq: signupDetail.qq || '123456',
-              avatar: signupDetail.avatar || ''
-            }
-          }
-        } catch (infoError) {
-          console.warn('获取我的信息失败，使用默认值:', infoError)
-        }
-        
-        // 准备组队数据
-        const teamData = {
-          myInfo: myInfo,
-          partnerInfo: {
-            gender: this.matchResult.gender || '女',
-            education: this.matchResult.education || '本科生',
-            majorCategory: this.matchResult.majorCategory || '工科',
-            college: this.matchResult.college || '计算机学院',
-            qq: this.matchResult.qq || '789012',
-            avatar: this.matchResult.avatar || ''
-          }
-        }
-        
-        // 跳转到确认组队页面，显示组队成功状态
-        console.log('跳转到确认组队页面，teamData:', teamData)
-        uni.redirectTo({
-          url: `/pages/single-match-confirm/index?teamData=${encodeURIComponent(JSON.stringify(teamData))}`,
-          success: () => {
-            console.log('✅ 跳转到确认组队页面成功')
-          },
-          fail: (err) => {
-            console.error('❌ redirectTo失败，尝试navigateTo:', err)
-            // 降级方案：尝试使用 navigateTo
-            uni.navigateTo({
-              url: `/pages/single-match-confirm/index?teamData=${encodeURIComponent(JSON.stringify(teamData))}`,
-              success: () => {
-                console.log('✅ 使用 navigateTo 跳转成功')
-              },
-              fail: (err2) => {
-                console.error('❌ 所有跳转方式都失败:', err2)
-                // 最后降级：显示成功弹窗
-                this.successType = 'team-success'
-                this.successTitle = '组队成功！'
-                this.showSuccessModal = true
-              }
-            })
-          }
-        })
+        // 不自动跳转，让用户点击弹窗关闭按钮后再跳转
+        // 跳转逻辑移到 handleSuccessClose 方法中
         
       } catch (error) {
         // 隐藏等待弹窗
         this.showWaitModal = false
-        console.error('❌ 组队失败:', error)
+        console.error('组队失败:', error)
         
-        uni.showToast({
-          title: error.message || '组队失败，请重试',
-          icon: 'none'
-        })
+        // 开发阶段：如果是无效URL错误，需要检查是否有有效的匹配对象ID
+        if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+          // 开发阶段：只有在有有效匹配对象ID时才模拟成功
+          if (this.matchResult && this.matchResult.id) {
+            console.log('开发阶段：API未配置，模拟组队成功')
+            this.successType = 'team-success'
+            this.successTitle = '组队成功！'
+            this.showSuccessModal = true
+          } else {
+            uni.showToast({
+              title: '暂无匹配对象，无法组队',
+              icon: 'none',
+              duration: 2000
+            })
+          }
+        } else {
+          uni.showToast({
+            title: error.message || '组队失败，请重试',
+            icon: 'none'
+          })
+        }
       }
     },
     // 处理拒绝组队
@@ -647,8 +556,21 @@ export default {
     },
     handleSuccessClose() {
       this.showSuccessModal = false
-      // 注意：现在确认组队后直接跳转到确认组队页面，不再通过成功弹窗跳转
-      // 如果还有成功弹窗显示（降级场景），保持关闭即可
+      
+      if (this.successType === 'team-success') {
+        // 组队成功后跳转到打卡页面
+        console.log('组队成功，跳转到打卡页面')
+        // 延迟一下，让弹窗关闭动画完成
+        setTimeout(() => {
+          uni.switchTab({
+            url: '/pages/checkin-detail/index',
+            fail: (err) => {
+              console.warn('switchTab失败，尝试reLaunch:', err)
+              uni.reLaunch({ url: '/pages/checkin-detail/index' })
+            }
+          })
+        }, 300)
+      }
     },
     goToSignup() {
       // 跳转到报名页面

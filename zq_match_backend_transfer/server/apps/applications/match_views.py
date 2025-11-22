@@ -184,6 +184,14 @@ class MatchViewSet(viewsets.GenericViewSet):
                 msg=f"未找到学号或用户名 '{student_no}' 对应的用户，请确认输入是否正确",
             )
         
+        
+        # 检查是否是自己（防止自己邀请自己）
+        if target_user.id == user.id:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="不能邀请自己组队",
+            )
+        
         # 检查目标用户是否已匹配
         if target_user.is_match:
             raise ApiException(
@@ -250,6 +258,14 @@ class MatchViewSet(viewsets.GenericViewSet):
                     "team": TeamInfoSerializer(team).data,
                 }
             })
+        
+        
+        # 删除已处理的旧邀请（避免 get_or_create 找到旧记录）
+        TeamInvitation.objects.filter(
+            inviter=user,
+            invitee=target_user,
+            status__in=['accepted', 'rejected']
+        ).delete()
         
         # 创建邀请（不直接组队）
         invitation, created = TeamInvitation.objects.get_or_create(
@@ -652,6 +668,13 @@ class MatchViewSet(viewsets.GenericViewSet):
                 ResponseType.ParamValidationFailed,
                 msg="您已发送换队友申请，等待对方回应",
             )
+        
+        # 删除已处理的旧申请（避免 unique_together 约束冲突）
+        TeamExchangeRequest.objects.filter(
+            requester=user,
+            teammate=teammate,
+            status__in=['accepted', 'rejected']
+        ).delete()
         
         # 创建换队友申请
         exchange_request = TeamExchangeRequest.objects.create(

@@ -335,7 +335,7 @@ export default {
         })
         
         // 通知父组件登录成功
-        this.$emit('login-success', userInfo)
+        this.$emit('login-success', result.userInfo)
         this.$emit('close')
         
         // 重置表单

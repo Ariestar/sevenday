@@ -377,9 +377,15 @@ export default {
         await requestExchangeTeammate()
         
         uni.hideLoading()
-        this.showWaitingModal = true
         
-        // 开始轮询检查申请状态
+        // 显示成功提示
+        uni.showToast({
+          title: '申请已发送，等待队友回应',
+          icon: 'success',
+          duration: 2000
+        })
+        
+        // 开始后台轮询检查申请状态（不显示弹窗）
         this.startPollingExchangeStatus()
       } catch (error) {
         uni.hideLoading()
@@ -401,7 +407,6 @@ export default {
           // 如果队伍已解散，说明对方同意了
           if (!matchList?.isMatched) {
             clearInterval(pollInterval)
-            this.showWaitingModal = false
             this.exchangeResult = {
               title: '换队友成功',
               message: '对方已同意换队友申请，队伍已解散。'
@@ -1282,9 +1287,8 @@ export default {
 .card-content {
   flex: 1;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
 }
 
 .card-label {
@@ -1292,7 +1296,7 @@ export default {
   font-weight: 400;
   font-size: 28rpx; /* 对应14px */
   line-height: 34rpx; /* 对应17px */
-  margin-right: 8rpx; /* 水平排列时的间距 */
+  margin-bottom: 4rpx; /* 对应2px */
 }
 
 .team-days-card .card-label {
