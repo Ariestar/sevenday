@@ -1,4 +1,4 @@
-from server.settings.util import config
+from server.settings.util import config, BASE_DIR
 
 # from server.settings.components.configs import CacheConfig
 
@@ -12,3 +12,6 @@ ALLOWED_HOSTS = [
 ]
 
 SERVER_URL = config("SERVER_URL", "https://api.match.ziqiang.net.cn")
+
+# 生产环境媒体文件配置
+MEDIA_ROOT = str(BASE_DIR.joinpath("static_files"))
