@@ -377,9 +377,15 @@ export default {
         await requestExchangeTeammate()
         
         uni.hideLoading()
-        this.showWaitingModal = true
         
-        // 开始轮询检查申请状态
+        // 显示成功提示
+        uni.showToast({
+          title: '申请已发送，等待队友回应',
+          icon: 'success',
+          duration: 2000
+        })
+        
+        // 开始后台轮询检查申请状态（不显示弹窗）
         this.startPollingExchangeStatus()
       } catch (error) {
         uni.hideLoading()
@@ -401,7 +407,6 @@ export default {
           // 如果队伍已解散，说明对方同意了
           if (!matchList?.isMatched) {
             clearInterval(pollInterval)
-            this.showWaitingModal = false
             this.exchangeResult = {
               title: '换队友成功',
               message: '对方已同意换队友申请，队伍已解散。'

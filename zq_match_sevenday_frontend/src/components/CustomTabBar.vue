@@ -129,6 +129,14 @@ export default {
       } else {
         console.log(`CustomTabBar: 未找到匹配的路由 ${route}`)
       }
+      
+      // 检查是否已组队，如果已组队，修改第一个tab的文字
+      const hasTeam = uni.getStorageSync('hasTeam')
+      if (hasTeam) {
+        this.tabList[0].text = '匹配'
+      } else {
+        this.tabList[0].text = '报名-匹配'
+      }
     },
     switchTab(index) {
       if (this.currentIndex === index) {
@@ -136,7 +144,9 @@ export default {
       }
       
       // 第一个tab（报名-匹配）应该跳转到报名页面，而不是多人匹配页面
-      if (index === 0) {
+      // 如果已经组队，则直接跳转到匹配页面（即默认行为），不需要特殊处理
+      const hasTeam = uni.getStorageSync('hasTeam')
+      if (index === 0 && !hasTeam) {
         // 先更新UI状态
         this.currentIndex = index
         

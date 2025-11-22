@@ -163,6 +163,7 @@
 <script>
 import { GENDER_OPTIONS, DEGREE_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
 import { submitSignup, getSignupDetail, cancelSignup, updateSignup } from '../../services/signup'
+import { getTeamInfo } from '../../services/match'
 import { updateUserInfo } from '../../services/auth'
 import { uploadAvatar } from '../../services/upload'
 import { getAcademies } from '../../services/academies'
@@ -216,6 +217,7 @@ export default {
   onShow() {
     // 触发TabBar更新，确保选中状态正确
     uni.$emit('tabbar-update')
+    this.checkTeamStatus()
   },
   methods: {
     async loadSignupDetail() {
@@ -674,6 +676,32 @@ export default {
             }
           }
         }
+      })
+    },
+    async checkTeamStatus() {
+      try {
+        // Check local storage first
+        const localHasTeam = uni.getStorageSync('hasTeam')
+        if (localHasTeam) {
+          this.redirectToMatch()
+          return
+        }
+        
+        // Check API
+        const res = await getTeamInfo()
+        if (res && res.team) {
+          uni.setStorageSync('hasTeam', true)
+          this.redirectToMatch()
+        } else {
+          uni.removeStorageSync('hasTeam')
+        }
+      } catch (err) {
+        console.error('Check team status failed:', err)
+      }
+    },
+    redirectToMatch() {
+      uni.switchTab({
+        url: '/pages/multiple-match/index'
       })
     }
   }

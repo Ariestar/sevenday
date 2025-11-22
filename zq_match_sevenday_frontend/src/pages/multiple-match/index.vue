@@ -7,14 +7,14 @@
     <!-- 报名/匹配标签切换区域 -->
     <view class="tab-section">
       <view class="tab-group">
-        <view class="tab-item" @click="goToSignup">
+        <view class="tab-item" @click="goToSignup" v-if="!hasTeam">
           <text class="tab-text">报名</text>
         </view>
         <view class="tab-item active">
           <text class="tab-text active">匹配</text>
         </view>
       </view>
-      <view class="tab-indicator"></view>
+      <view class="tab-indicator" v-if="!hasTeam"></view>
     </view>
 
     <!-- 主要内容区域 -->
@@ -31,8 +31,8 @@
         </view>
       </view>
       
-      <!-- 输入卡片 -->
-      <view class="input-card">
+      <!-- 输入卡片 (未组队时显示) -->
+      <view class="input-card" v-if="!hasTeam">
         <!-- 标题图标和文字 -->
         <view class="card-header">
           <image class="star-icon" src="/static/match-mutiple-part1/star.png" mode="aspectFit"></image>
@@ -62,6 +62,36 @@
         </view>
       </view>
 
+      <!-- 队伍信息卡片 (已组队时显示) -->
+      <view class="input-card" v-else>
+        <!-- 标题图标和文字 -->
+        <view class="card-header">
+          <image class="star-icon" src="/static/match-mutiple-part1/star.png" mode="aspectFit"></image>
+          <text class="card-title">我的队伍</text>
+        </view>
+        
+        <!-- 队伍信息 -->
+        <view class="team-info-section">
+          <view class="team-name" v-if="teamInfo && teamInfo.name">
+            <text class="label">队名：</text>
+            <text class="value">{{ teamInfo.name }}</text>
+          </view>
+          <view class="teammates" v-if="teamInfo && teamInfo.users">
+            <text class="label">队友：</text>
+            <view class="teammate-list">
+              <text v-for="(user, index) in teamInfo.users" :key="index" class="teammate-name">
+                {{ user.username || user.name || '未知' }}
+              </text>
+            </view>
+          </view>
+        </view>
+        
+        <!-- 解散按钮 -->
+        <view class="confirm-btn disband-btn" @click="handleDisband">
+          <text class="confirm-text">解散队伍</text>
+        </view>
+      </view>
+
       <!-- 说明文字 -->
       <view class="description">
         <text class="desc-text">关于组队模式的相关说明</text>
@@ -75,7 +105,7 @@
 
 <script>
 import CustomTabBar from '@/components/CustomTabBar.vue'
-import { getInvitation, targetMatch } from '../../services/match'
+import { getInvitation, targetMatch, getTeamInfo, disbandTeam } from '../../services/match'
 import { getUserInfo } from '../../services/auth'
 import authUtils from '../../utils/auth'
 
@@ -89,7 +119,9 @@ export default {
       hasPendingInvitation: false,
       invitationInfo: null,
       currentStudentNo: null, // 当前用户的学号
-      errorMessage: '' // 错误提示信息
+      errorMessage: '', // 错误提示信息
+      hasTeam: false,
+      teamInfo: null
     }
   },
   onLoad() {
@@ -102,6 +134,7 @@ export default {
     // 每次显示页面时也检查邀请（但不显示弹窗，只更新卡片）
     // 避免频繁弹窗干扰用户操作
     this.checkPendingInvitation()
+    this.checkTeamStatus()
   },
   methods: {
     async loadCurrentStudentNo() {
@@ -383,6 +416,83 @@ export default {
           })
         }
       }
+    },
+    async checkTeamStatus() {
+      try {
+        // 先检查本地存储
+        const localHasTeam = uni.getStorageSync('hasTeam')
+        if (localHasTeam) {
+          this.hasTeam = true
+        }
+        
+        // 再通过API确认
+        const res = await getTeamInfo()
+        if (res && res.team) {
+          this.hasTeam = true
+          this.teamInfo = res.team
+          uni.setStorageSync('hasTeam', true)
+          // 如果有队名，也保存一下
+          if (res.team.name) {
+            uni.setStorageSync('teamName', res.team.name)
+          }
+        } else {
+          this.hasTeam = false
+          this.teamInfo = null
+          uni.removeStorageSync('hasTeam')
+        }
+      } catch (err) {
+        console.error('检查队伍状态失败:', err)
+      }
+    },
+    handleDisband() {
+      uni.showModal({
+        title: '确认解散',
+        content: '确定要解散当前队伍吗？解散后需要重新组队。',
+        success: async (res) => {
+          if (res.confirm) {
+            try {
+              uni.showLoading({ title: '解散中...' })
+              await disbandTeam()
+              uni.hideLoading()
+              
+              uni.showToast({
+                title: '队伍已解散',
+                icon: 'success'
+              })
+              
+              // 更新状态
+              this.hasTeam = false
+              this.teamInfo = null
+              uni.removeStorageSync('hasTeam')
+              uni.removeStorageSync('teamName')
+              
+              // 重新检查邀请
+              this.checkPendingInvitation()
+              
+            } catch (error) {
+              uni.hideLoading()
+              console.error('解散队伍失败:', error)
+              
+              // 开发阶段：模拟成功
+              if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
+                console.log('开发阶段：API未配置，模拟解散成功')
+                this.hasTeam = false
+                this.teamInfo = null
+                uni.removeStorageSync('hasTeam')
+                uni.showToast({
+                  title: '队伍已解散',
+                  icon: 'success'
+                })
+              } else {
+                uni.showToast({
+                  title: error.message || '解散失败，请重试',
+                  icon: 'none'
+                })
+              }
+            }
+          }
+        }
+      })
     }
   }
 }
@@ -655,5 +765,46 @@ export default {
   font-size: 32rpx; /* 对应16px */
   line-height: 38rpx; /* 对应19px */
   color: #9094A6;
+}
+
+/* 队伍信息样式 */
+.team-info-section {
+  margin-bottom: 40rpx;
+}
+
+.team-name, .teammates {
+  display: flex;
+  margin-bottom: 20rpx;
+  font-size: 30rpx;
+  color: #333;
+}
+
+.label {
+  font-weight: bold;
+  width: 100rpx;
+  flex-shrink: 0;
+}
+
+.value {
+  flex: 1;
+}
+
+.teammate-list {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.teammate-name {
+  background: #F7E7FF;
+  padding: 4rpx 16rpx;
+  border-radius: 20rpx;
+  font-size: 26rpx;
+  color: #A100FE;
+}
+
+.disband-btn {
+  background: #FF6B6B;
 }
 </style>
