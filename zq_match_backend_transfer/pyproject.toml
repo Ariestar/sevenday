@@ -27,6 +27,7 @@ wechatpy = "^1.8.18"
 drf-extensions = "^0.7.1"
 django-method-override = "^1.0.4"
 mysqlclient = "^2.2.0"
+pymysql = "^1.1.0"
 django-simpleui = "^2023.11.16"
 
 [build-system]

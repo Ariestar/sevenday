@@ -552,3 +552,4 @@ zq-auth-sdk==0.1.0 ; python_version >= "3.11" and python_version < "4.0" \
 zq-django-util==0.1.10 ; python_version >= "3.11" and python_version < "4.0" \
     --hash=sha256:2af531d4faa6ae5adee96743514b4b0f4113934dd4fb4cad4446fc77dc521f85 \
     --hash=sha256:cd2cfb3d8c9e62684ccb9008a7d14465dc04c4b9ce7cbaa3765136ecd1ad837e
+pymysql==1.1.0 ; python_version >= "3.11" and python_version < "4.0"
