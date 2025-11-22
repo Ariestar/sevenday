@@ -14,38 +14,46 @@
           <view class="background-overlay"></view>
         </view>
         
-        <!-- 表单内容 -->
-        <view class="form-content">
+        <!-- 表单内容 - 独立层级 -->
+        <view class="form-content" @tap.stop>
           <!-- 邮箱输入 -->
           <view class="form-row">
             <text class="form-label">邮箱</text>
-            <input 
-              v-model="formData.email"
-              class="form-input"
-              type="text"
-              placeholder="请输入"
-              placeholder-class="input-placeholder"
-            />
+            <view class="input-wrapper" @tap.stop>
+              <input 
+                v-model="formData.email"
+                class="form-input"
+                type="text"
+                placeholder="请输入"
+                placeholder-class="input-placeholder"
+                :focus="false"
+                :disabled="false"
+              />
+            </view>
           </view>
           
           <!-- 验证码输入 -->
           <view class="form-row">
             <text class="form-label">验证码</text>
             <view class="verify-code-row">
-              <input 
-                v-model="formData.verifyCode"
-                class="form-input verify-input"
-                type="text"
-                maxlength="6"
-                placeholder="请输入6位验证码"
-                placeholder-class="input-placeholder"
-                @input="handleVerifyCodeInput"
-              />
+              <view class="input-wrapper" @tap.stop>
+                <input 
+                  v-model="formData.verifyCode"
+                  class="form-input verify-input"
+                  type="text"
+                  maxlength="6"
+                  placeholder="请输入6位验证码"
+                  placeholder-class="input-placeholder"
+                  @input="handleVerifyCodeInput"
+                  :focus="false"
+                  :disabled="false"
+                />
+              </view>
               <button 
                 class="get-code-btn"
                 :class="{ disabled: codeCountdown > 0 }"
                 :disabled="codeCountdown > 0 || !formData.email"
-                @tap="handleGetCode"
+                @tap.stop="handleGetCode"
               >
                 {{ codeCountdown > 0 ? `${codeCountdown}s` : '获取验证码' }}
               </button>
@@ -289,6 +297,7 @@ export default {
   height: 100%;
   z-index: 1;
   overflow: hidden;
+  pointer-events: none; /* 允许点击事件穿透 */
 }
 
 .crown-image {
@@ -299,6 +308,7 @@ export default {
   top: -80rpx; /* 往上移动 */
   left: -10rpx; /* 居中对齐 */
   opacity: 0.7; /* 70%透明度 */
+  pointer-events: none; /* 图片不阻挡点击 */
 }
 
 .background-overlay {
@@ -309,6 +319,7 @@ export default {
   bottom: 0;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0.6) 19.71%, rgba(255, 255, 255, 0.87) 41.83%, rgba(255, 255, 255, 1) 100%);
   z-index: 2; /* 在背景图片之上，但在表单内容之下 */
+  pointer-events: none; /* 允许点击事件穿透到下层元素 */
 }
 
 .form-content {
@@ -318,11 +329,12 @@ export default {
   right: 0;
   height: 38%; /* 稍微增加高度以容纳所有内容 */
   padding: 15rpx 32rpx 15rpx; /* 减少padding以更好利用空间 */
-  z-index: 3; /* 确保在遮罩层之上 */
+  z-index: 100; /* 大幅提高层级，确保在所有背景层之上 */
   display: flex;
   flex-direction: column;
   justify-content: flex-start; /* 从顶部开始排列 */
   overflow-y: auto; /* 如果内容过多可以滚动 */
+  background: transparent; /* 确保背景透明，不阻挡下层显示 */
 }
 
 .form-row {
@@ -330,6 +342,8 @@ export default {
   align-items: center;
   margin-bottom: 16rpx; /* 进一步减少间距 */
   gap: 16rpx;
+  position: relative;
+  z-index: 101; /* 确保在背景层之上 */
 }
 
 .form-label {
@@ -340,8 +354,15 @@ export default {
   text-align: left;
 }
 
-.form-input {
+.input-wrapper {
   flex: 1;
+  position: relative;
+  z-index: 102;
+  min-width: 0;
+}
+
+.form-input {
+  width: 100%;
   height: 64rpx;
   background-color: #ffffff;
   border: 2rpx solid #1f2635;
@@ -363,11 +384,12 @@ export default {
   gap: 16rpx;
   flex: 1;
   min-width: 0;
+  position: relative;
+  z-index: 101; /* 确保在背景层之上 */
 }
 
 .verify-input {
-  flex: 1;
-  min-width: 0;
+  width: 100%;
 }
 
 .get-code-btn {

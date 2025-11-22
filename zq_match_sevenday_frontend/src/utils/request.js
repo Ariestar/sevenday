@@ -64,6 +64,8 @@ export function request(url, options = {}) {
             console.log('🔍 解析后的 JSON:', responseData)
           } catch (e) {
             console.error('🔍 JSON 解析失败:', e)
+            // 如果 JSON 解析失败，使用原始数据
+            responseData = res.data
           }
         }
         
@@ -76,7 +78,8 @@ export function request(url, options = {}) {
         // 根据后端约定的状态码判断
         // 兼容 code 为数字 0 或字符串 "00000" 的情况
         const code = responseData?.code
-        const isSuccess = code === 0 || code === '0' || code === '00000'
+        const isSuccess = code === 0 || code === '0' || code === '00000' || 
+                         (typeof code === 'string' && code.startsWith('0000'))
         
         // 兼容 200 (成功) 和 201 (创建成功) 状态码
         const isHttpSuccess = res.statusCode === 200 || res.statusCode === 201
@@ -89,7 +92,15 @@ export function request(url, options = {}) {
           isHttpSuccess: isHttpSuccess,
           condition1: isHttpSuccess,
           condition2: isSuccess,
-          finalResult: isHttpSuccess && isSuccess
+          finalResult: isHttpSuccess && isSuccess,
+          // 添加更详细的比较信息
+          codeComparisons: {
+            'code === 0': code === 0,
+            'code === "0"': code === '0',
+            'code === "00000"': code === '00000',
+            'code == 0': code == 0,
+            'code == "0"': code == '0'
+          }
         })
         
         if (isHttpSuccess && isSuccess) {
