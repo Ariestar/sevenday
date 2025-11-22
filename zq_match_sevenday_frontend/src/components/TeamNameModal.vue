@@ -39,6 +39,10 @@ export default {
     visible: {
       type: Boolean,
       default: false
+    },
+    defaultTeamName: {
+      type: String,
+      default: ''
     }
   },
   data() {
@@ -55,8 +59,15 @@ export default {
   watch: {
     visible(newVal) {
       if (newVal) {
-        this.teamName = ''
+        // 如果有默认队名，使用默认值；否则清空
+        this.teamName = this.defaultTeamName || ''
         this.inputFocus = true
+      }
+    },
+    defaultTeamName(newVal) {
+      // 如果弹窗已打开且有新的默认值，更新队名
+      if (this.visible && newVal) {
+        this.teamName = newVal
       }
     }
   },
@@ -198,7 +209,7 @@ export default {
 /* 输入区域 */
 .input-section {
   position: relative;
-  margin-bottom: 220rpx; /* 增加间距，使按钮下移 */
+  margin-bottom: 60rpx; /* 输入框和按钮之间的间距 */
 }
 
 .team-name-input {
@@ -224,22 +235,44 @@ export default {
   background: #FFFFFF;
 }
 
+.char-count {
+  position: absolute;
+  right: 24rpx;
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 24rpx;
+  color: #9094A6;
+  pointer-events: none;
+}
+
 
 /* 按钮区域 */
-.button-section {
+.button-group {
   display: flex;
+  justify-content: space-between;
+  gap: 40rpx;
+}
+
+.cancel-btn {
+  flex: 1;
+  height: 94rpx; /* 对应47px */
+  background: #F5F5F5;
+  border-radius: 180rpx; /* 对应90px */
+  display: flex;
+  align-items: center;
   justify-content: center;
 }
 
 .confirm-btn {
-  width: 300rpx; /* 缩短按钮长度 */
-  height: 105rpx; /* 对应47px */
+  flex: 1;
+  height: 94rpx; /* 对应47px */
   background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
   border-radius: 180rpx; /* 对应90px */
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 8rpx;
 }
 
 .confirm-btn.disabled {
@@ -266,6 +299,10 @@ export default {
 }
 
 .confirm-btn.disabled .confirm-icon {
+  color: #9094A6;
+}
+
+.cancel-btn .btn-text {
   color: #9094A6;
 }
 </style>

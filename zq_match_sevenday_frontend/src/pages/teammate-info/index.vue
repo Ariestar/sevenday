@@ -270,6 +270,7 @@
 import CustomTabBar from '@/components/CustomTabBar.vue'
 import { getMatchList, requestExchangeTeammate, getExchangeRequest, respondExchangeRequest } from '../../services/match'
 import { getMyCheckinList, getCheckinTasks } from '../../services/checkin'
+import authUtils from '../../utils/auth'
 
 export default {
   components: {
@@ -598,15 +599,78 @@ export default {
           console.log('result本身就是data:', matchList)
         }
         
-        if (matchList && matchList.isMatched && matchList.matches && matchList.matches.length > 0) {
-          console.log('✅ 找到队友信息:', matchList.matches)
-          const teammate = matchList.matches[0] // 取第一个队友
-          this.updateTeammateInfo(teammate)
+        // 尝试多种数据格式获取队友信息
+        let teammates = []
+        
+        // 方式1: 从 matches 字段获取（旧格式）
+        if (matchList && matchList.matches && Array.isArray(matchList.matches) && matchList.matches.length > 0) {
+          teammates = matchList.matches
+          console.log('✅ 从 matches 字段找到队友信息:', teammates)
+        }
+        // 方式2: 从 team.users 字段获取（新格式）
+        else if (matchList && matchList.team && matchList.team.users && Array.isArray(matchList.team.users) && matchList.team.users.length > 0) {
+          teammates = matchList.team.users
+          console.log('✅ 从 team.users 字段找到队友信息:', teammates)
+        }
+        // 方式3: 从 team.members 字段获取
+        else if (matchList && matchList.team && matchList.team.members && Array.isArray(matchList.team.members) && matchList.team.members.length > 0) {
+          teammates = matchList.team.members
+          console.log('✅ 从 team.members 字段找到队友信息:', teammates)
+        }
+        // 方式4: 从 team 字段直接获取（如果 team 本身是用户数组）
+        else if (matchList && matchList.team && Array.isArray(matchList.team) && matchList.team.length > 0) {
+          teammates = matchList.team
+          console.log('✅ 从 team 数组找到队友信息:', teammates)
+        }
+        
+        if (teammates.length > 0) {
+          // 过滤掉当前用户自己
+          // 尝试多种方式获取当前用户ID
+          const currentUserInfo = authUtils.getUserInfo()
+          const currentUserId = currentUserInfo?.id || uni.getStorageSync('userId') || null
           
-          // 保存到本地存储
-          uni.setStorageSync('teammates', matchList.matches)
+          let otherTeammates = teammates
+          if (currentUserId) {
+            otherTeammates = teammates.filter(t => {
+              const teammateId = t.id || t.userId || t.user?.id
+              return teammateId && teammateId !== currentUserId
+            })
+          }
+          
+          if (otherTeammates.length > 0) {
+            const teammate = otherTeammates[0] // 取第一个队友（排除自己）
+            console.log('✅ 找到队友信息:', teammate)
+            this.updateTeammateInfo(teammate)
+            
+            // 保存到本地存储
+            uni.setStorageSync('teammates', otherTeammates)
+          } else if (teammates.length > 0) {
+            // 如果过滤后没有队友，但原始数据有，可能是当前用户ID获取失败
+            // 如果只有2个用户，其中一个就是队友
+            if (teammates.length === 2) {
+              // 取第一个作为队友（如果ID不匹配）
+              const teammate = teammates[0]
+              console.log('⚠️ 过滤后无队友，但原始数据有2个用户，使用第一个作为队友:', teammate)
+              this.updateTeammateInfo(teammate)
+              uni.setStorageSync('teammates', [teammate])
+            } else {
+              console.warn('⚠️ 未找到其他队友（可能只有自己）')
+              // 如果API没有返回队友信息，尝试使用本地存储
+              if (teammatesFromStorage && teammatesFromStorage.length > 0) {
+                const teammate = teammatesFromStorage[0]
+                this.updateTeammateInfo(teammate)
+              }
+            }
+          } else {
+            console.warn('⚠️ 未找到其他队友（可能只有自己）')
+            // 如果API没有返回队友信息，尝试使用本地存储
+            if (teammatesFromStorage && teammatesFromStorage.length > 0) {
+              const teammate = teammatesFromStorage[0]
+              this.updateTeammateInfo(teammate)
+            }
+          }
         } else {
-          console.warn('⚠️ 未找到队友信息')
+          console.warn('⚠️ 未找到队友信息，matchList:', matchList)
           // 如果API没有返回队友信息，尝试使用本地存储
           if (teammatesFromStorage && teammatesFromStorage.length > 0) {
             const teammate = teammatesFromStorage[0]

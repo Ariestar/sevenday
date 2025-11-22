@@ -70,6 +70,8 @@
 <script>
 import CustomTabBar from '@/components/CustomTabBar.vue'
 import { getInvitation, targetMatch } from '../../services/match'
+import { getUserInfo } from '../../services/auth'
+import authUtils from '../../utils/auth'
 
 export default {
   components: {
@@ -176,6 +178,66 @@ export default {
         uni.showToast({
           title: '请输入学号',
           icon: 'none'
+        })
+        return
+      }
+      
+      // 检查是否是自己和自己组队
+      try {
+        // 获取当前用户信息
+        let currentUserInfo = authUtils.getUserInfo()
+        console.log('🔍 当前用户信息（本地）:', currentUserInfo)
+        
+        // 如果本地存储没有学号，尝试从服务器获取
+        if (!currentUserInfo || (!currentUserInfo.school_number && !currentUserInfo.studentNo && !currentUserInfo.student_number)) {
+          try {
+            const serverUserInfo = await getUserInfo()
+            console.log('🔍 当前用户信息（服务器）:', serverUserInfo)
+            if (serverUserInfo) {
+              currentUserInfo = serverUserInfo
+              authUtils.setUserInfo(serverUserInfo)
+            }
+          } catch (err) {
+            console.warn('获取用户信息失败:', err)
+          }
+        }
+        
+        // 检查输入的学号是否与当前用户学号相同
+        const currentStudentNo = currentUserInfo?.school_number || currentUserInfo?.studentNo || currentUserInfo?.student_number
+        const inputStudentNo = this.studentNumber.trim()
+        
+        console.log('🔍 学号检查:', {
+          currentStudentNo,
+          inputStudentNo,
+          isSame: currentStudentNo && inputStudentNo === String(currentStudentNo).trim()
+        })
+        
+        if (currentStudentNo && inputStudentNo === String(currentStudentNo).trim()) {
+          uni.showToast({
+            title: '不能和自己组队',
+            icon: 'none',
+            duration: 2000
+          })
+          return
+        }
+        
+        // 如果无法获取当前用户学号，也阻止匹配（安全起见）
+        if (!currentStudentNo) {
+          console.warn('⚠️ 无法获取当前用户学号，阻止匹配以确保安全')
+          uni.showToast({
+            title: '无法验证用户信息，请重新登录',
+            icon: 'none',
+            duration: 2000
+          })
+          return
+        }
+      } catch (err) {
+        console.error('检查用户学号失败:', err)
+        // 如果检查失败，阻止匹配以确保安全
+        uni.showToast({
+          title: '验证失败，请重试',
+          icon: 'none',
+          duration: 2000
         })
         return
       }
@@ -365,30 +427,35 @@ export default {
 
 /* 邀请提示卡片 */
 .invitation-notice-card {
-  width: 664rpx;
+  width: 100%;
   background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
   border-radius: 18rpx;
   padding: 30rpx 40rpx;
   margin-bottom: 30rpx;
   box-shadow: 0 4rpx 12rpx rgba(161, 0, 254, 0.3);
+  box-sizing: border-box;
 }
 
 .notice-content {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  width: 100%;
 }
 
 .notice-icon {
   width: 48rpx;
   height: 48rpx;
   margin-right: 20rpx;
+  flex-shrink: 0;
 }
 
 .notice-text {
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .notice-title {
@@ -398,6 +465,9 @@ export default {
   line-height: 38rpx;
   color: #FFFFFF;
   margin-bottom: 8rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notice-desc {
@@ -406,12 +476,17 @@ export default {
   font-size: 24rpx;
   line-height: 28rpx;
   color: rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .notice-arrow {
   font-size: 32rpx;
   color: #FFFFFF;
   font-weight: 700;
+  margin-left: 20rpx;
+  flex-shrink: 0;
 }
 
 /* 输入卡片 */

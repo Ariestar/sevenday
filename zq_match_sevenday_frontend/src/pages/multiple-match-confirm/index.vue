@@ -89,17 +89,27 @@
         
         <view class="button-group">
           <view class="agree-btn" @click="handleAgree">
-            <text class="btn-text">同意</text>
+            <text class="agree-btn-text">同意</text>
           </view>
           <view class="reject-btn" @click="handleReject">
-            <text class="btn-text">拒绝</text>
+            <text class="reject-btn-text">拒绝</text>
           </view>
         </view>
       </view>
     </view>
 
-    <!-- 组队成功弹窗 -->
+    <!-- 设置队名弹窗（优先级更高，先显示） -->
+    <TeamNameModal
+      v-if="showTeamNameModal"
+      :visible="showTeamNameModal"
+      :defaultTeamName="currentTeamName"
+      @cancel="handleTeamNameCancel"
+      @confirm="handleTeamNameConfirm"
+    />
+
+    <!-- 组队成功弹窗（只有在设置队名完成后才显示） -->
     <TeamCreatedModal
+      v-if="!showTeamNameModal"
       :visible="showTeamCreatedModal"
       :teamName="currentTeamName"
       @close="handleTeamCreatedClose"
@@ -114,12 +124,16 @@
 <script>
 import CustomTabBar from '@/components/CustomTabBar.vue'
 import TeamCreatedModal from '@/components/TeamCreatedModal.vue'
-import { getInvitation, confirmMatch } from '../../services/match'
+import TeamNameModal from '@/components/TeamNameModal.vue'
+import { getInvitation, confirmMatch, setTeamName } from '../../services/match'
+import { getUserInfo } from '../../services/auth'
+import authUtils from '../../utils/auth'
 
 export default {
   components: {
     CustomTabBar,
-    TeamCreatedModal
+    TeamCreatedModal,
+    TeamNameModal
   },
   data() {
     return {
@@ -136,6 +150,7 @@ export default {
         avatar: ''
       },
       showTeamCreatedModal: false,
+      showTeamNameModal: false,
       currentTeamName: '',
       isTeamCreated: false  // 标记是否已经组队成功，避免重复加载邀请
     }
@@ -297,6 +312,68 @@ export default {
     
     async confirmTeamRequest(agreed) {
       try {
+        if (agreed) {
+          // 检查是否是自己和自己组队
+          try {
+            // 获取当前用户信息
+            let currentUserInfo = authUtils.getUserInfo()
+            console.log('🔍 当前用户信息（本地）:', currentUserInfo)
+            
+            // 如果本地存储没有用户ID，尝试从服务器获取
+            if (!currentUserInfo || !currentUserInfo.id) {
+              try {
+                const serverUserInfo = await getUserInfo()
+                console.log('🔍 当前用户信息（服务器）:', serverUserInfo)
+                if (serverUserInfo) {
+                  currentUserInfo = serverUserInfo
+                  authUtils.setUserInfo(serverUserInfo)
+                }
+              } catch (err) {
+                console.warn('获取用户信息失败:', err)
+              }
+            }
+            
+            // 检查邀请方的ID是否与当前用户ID相同
+            const currentUserId = currentUserInfo?.id || uni.getStorageSync('userId')
+            const inviterId = this.inviterInfo?.id
+            
+            console.log('🔍 邀请方ID检查:', {
+              currentUserId,
+              inviterId,
+              isSame: currentUserId && inviterId && String(inviterId) === String(currentUserId)
+            })
+            
+            if (currentUserId && inviterId && String(inviterId) === String(currentUserId)) {
+              uni.showToast({
+                title: '不能和自己组队',
+                icon: 'none',
+                duration: 2000
+              })
+              return
+            }
+            
+            // 如果无法获取当前用户ID，也阻止匹配（安全起见）
+            if (!currentUserId) {
+              console.warn('⚠️ 无法获取当前用户ID，阻止匹配以确保安全')
+              uni.showToast({
+                title: '无法验证用户信息，请重新登录',
+                icon: 'none',
+                duration: 2000
+              })
+              return
+            }
+          } catch (err) {
+            console.error('检查用户ID失败:', err)
+            // 如果检查失败，阻止匹配以确保安全
+            uni.showToast({
+              title: '验证失败，请重试',
+              icon: 'none',
+              duration: 2000
+            })
+            return
+          }
+        }
+        
         uni.showLoading({ title: agreed ? '组队中...' : '处理中...' })
         
         if (agreed) {
@@ -317,21 +394,119 @@ export default {
           uni.setStorageSync('hasTeam', true)
           uni.setStorageSync('justCreatedTeam', true)
           
-          // 检查后端返回的队名
-          const teamNameFromAPI = result?.data?.team?.name || result?.team?.name
-          if (teamNameFromAPI && teamNameFromAPI.trim()) {
-            // 如果后端已设置队名，使用该队名
-            this.currentTeamName = teamNameFromAPI
-            uni.setStorageSync('teamName', teamNameFromAPI)
+          // 保存队友信息到本地存储
+          const teamData = result?.data?.team || result?.team
+          if (teamData) {
+            // 尝试从不同字段获取队友信息
+            let teammates = []
+            if (teamData.users && Array.isArray(teamData.users)) {
+              teammates = teamData.users
+            } else if (teamData.members && Array.isArray(teamData.members)) {
+              teammates = teamData.members
+            } else if (Array.isArray(teamData)) {
+              teammates = teamData
+            }
+            
+            // 过滤掉当前用户自己
+            // 尝试多种方式获取当前用户ID
+            const currentUserInfo = authUtils.getUserInfo()
+            const currentUserId = currentUserInfo?.id || uni.getStorageSync('userId') || null
+            
+            if (teammates.length > 0) {
+              let otherTeammates = teammates
+              
+              // 如果有当前用户ID，过滤掉自己
+              if (currentUserId) {
+                otherTeammates = teammates.filter(t => {
+                  const teammateId = t.id || t.userId || t.user?.id
+                  return teammateId && teammateId !== currentUserId
+                })
+              }
+              
+              // 如果过滤后还有队友，保存；否则保存所有队友（可能当前用户ID获取失败）
+              if (otherTeammates.length > 0) {
+                console.log('✅ 保存队友信息到本地存储:', otherTeammates)
+                uni.setStorageSync('teammates', otherTeammates)
+              } else if (teammates.length > 0) {
+                // 如果过滤后没有队友，但原始数据有，可能是当前用户ID获取失败，保存所有队友
+                console.log('⚠️ 过滤后无队友，保存所有队友信息（可能当前用户ID获取失败）:', teammates)
+                uni.setStorageSync('teammates', teammates)
+              }
+            }
           } else {
-            // 如果后端未设置队名，不设置默认值，让用户有机会创建队名
-            // 清除可能存在的旧队名
-            this.currentTeamName = ''
-            uni.removeStorageSync('teamName')
+            // 如果组队成功但返回数据中没有队友信息，尝试调用 getMatchList 获取
+            console.log('⚠️ 组队成功但返回数据中没有队友信息，尝试获取队友信息')
+            try {
+              const { getMatchList } = await import('../../services/match')
+              const matchResult = await getMatchList()
+              const matchList = matchResult?.data || matchResult
+              
+              // 尝试从 matchList 中获取队友信息
+              if (matchList && matchList.team) {
+                let teammates = []
+                if (matchList.team.users && Array.isArray(matchList.team.users)) {
+                  teammates = matchList.team.users
+                } else if (matchList.team.members && Array.isArray(matchList.team.members)) {
+                  teammates = matchList.team.members
+                }
+                
+                if (teammates.length > 0) {
+                  const currentUserInfo = authUtils.getUserInfo()
+                  const currentUserId = currentUserInfo?.id || uni.getStorageSync('userId') || null
+                  let otherTeammates = teammates
+                  
+                  if (currentUserId) {
+                    otherTeammates = teammates.filter(t => {
+                      const teammateId = t.id || t.userId || t.user?.id
+                      return teammateId && teammateId !== currentUserId
+                    })
+                  }
+                  
+                  if (otherTeammates.length > 0) {
+                    console.log('✅ 从 getMatchList 获取并保存队友信息:', otherTeammates)
+                    uni.setStorageSync('teammates', otherTeammates)
+                  } else if (teammates.length > 0) {
+                    console.log('⚠️ 从 getMatchList 获取队友信息（过滤后无队友）:', teammates)
+                    uni.setStorageSync('teammates', teammates)
+                  }
+                }
+              }
+            } catch (err) {
+              console.error('获取队友信息失败:', err)
+            }
           }
           
-          // 显示组队成功弹窗
-          this.showTeamCreatedModal = true
+          // 检查后端返回的队名（如果有，作为默认值）
+          const teamNameFromAPI = result?.data?.team?.name || result?.team?.name
+          console.log('🔍 检查队名状态:', {
+            teamNameFromAPI,
+            hasTeamName: teamNameFromAPI && teamNameFromAPI.trim(),
+            result: result
+          })
+          
+          // 无论后端是否返回队名，都先显示设置队名弹窗
+          // 如果后端已返回队名，可以作为默认值预填充
+          if (teamNameFromAPI && teamNameFromAPI.trim()) {
+            // 如果后端已设置队名，保存为当前队名（但还是要显示设置弹窗让用户确认或修改）
+            this.currentTeamName = teamNameFromAPI
+            // 注意：这里不保存到本地存储，等用户确认后再保存
+          } else {
+            // 如果后端未设置队名，清空
+            this.currentTeamName = ''
+          }
+          
+          // 确保组队成功弹窗是关闭的
+          this.showTeamCreatedModal = false
+          
+          // 始终显示设置队名弹窗
+          console.log('📝 显示设置队名弹窗')
+          this.showTeamNameModal = true
+          console.log('📝 showTeamNameModal 设置为:', this.showTeamNameModal)
+          
+          // 使用 nextTick 确保 DOM 更新
+          this.$nextTick(() => {
+            console.log('📝 nextTick 后 showTeamNameModal:', this.showTeamNameModal)
+          })
         } else {
           // 拒绝邀请
           await confirmMatch({
@@ -370,7 +545,9 @@ export default {
             // 不设置默认队名，让用户有机会创建队名
             this.currentTeamName = ''
             uni.removeStorageSync('teamName')
-            this.showTeamCreatedModal = true
+            console.log('📝 开发阶段：显示设置队名弹窗')
+            this.showTeamNameModal = true
+            console.log('📝 showTeamNameModal 设置为:', this.showTeamNameModal)
           } else {
             uni.showToast({
               title: '已拒绝组队申请',
@@ -383,6 +560,69 @@ export default {
         } else {
           uni.showToast({
             title: error.message || '操作失败，请重试',
+            icon: 'none'
+          })
+        }
+      }
+    },
+    
+    handleTeamNameCancel() {
+      // 取消设置队名，询问是否使用默认队名
+      uni.showModal({
+        title: '提示',
+        content: '不创建队名将使用默认队名，确定吗？',
+        success: (res) => {
+          if (res.confirm) {
+            // 使用默认队名
+            this.currentTeamName = '默认队名'
+            uni.setStorageSync('teamName', '默认队名')
+            this.showTeamNameModal = false
+            // 显示组队成功弹窗
+            this.showTeamCreatedModal = true
+          }
+          // 如果取消，保持弹窗打开
+        }
+      })
+    },
+    
+    async handleTeamNameConfirm(teamName) {
+      try {
+        uni.showLoading({ title: '保存中...' })
+        
+        // 调用后端API保存队名
+        await setTeamName(teamName)
+        
+        uni.hideLoading()
+        
+        // 保存成功，更新本地存储和当前队名
+        this.currentTeamName = teamName
+        uni.setStorageSync('teamName', teamName)
+        
+        // 关闭设置队名弹窗
+        this.showTeamNameModal = false
+        
+        // 显示组队成功弹窗
+        this.showTeamCreatedModal = true
+      } catch (error) {
+        uni.hideLoading()
+        console.error('保存队名失败:', error)
+        
+        // 如果是因为队名已设置而失败，直接使用已有队名
+        if (error.message?.includes('已设置') || error.message?.includes('already')) {
+          uni.showToast({
+            title: '队名已设置，不可修改',
+            icon: 'none'
+          })
+          this.showTeamNameModal = false
+          // 重新获取队名
+          const savedTeamName = uni.getStorageSync('teamName')
+          if (savedTeamName) {
+            this.currentTeamName = savedTeamName
+            this.showTeamCreatedModal = true
+          }
+        } else {
+          uni.showToast({
+            title: '保存队名失败，请重试',
             icon: 'none'
           })
         }
@@ -566,8 +806,9 @@ export default {
 /* 信息卡片 */
 .info-card {
   position: relative;
-  width: 664rpx; /* 对应332px */
-  height: 504rpx; /* 对应252px */
+  width: 100%;
+  max-width: 664rpx; /* 对应332px */
+  min-height: 504rpx; /* 对应252px */
   background: #FFFFFF;
   border: 4rpx solid #A100FE; /* 对应2px */
   border-radius: 18rpx; /* 对应9px */
@@ -733,38 +974,53 @@ export default {
   display: flex;
   justify-content: space-between;
   gap: 62rpx; /* 间距 */
+  width: 100%;
+  box-sizing: border-box;
 }
 
 .agree-btn {
-  width: 280rpx; /* 对应140px */
+  flex: 1;
+  min-width: 0;
   height: 94rpx; /* 对应47px */
   background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
   border-radius: 180rpx; /* 对应90px */
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
 }
 
 .reject-btn {
-  width: 280rpx; /* 对应140px */
+  flex: 1;
+  min-width: 0;
   height: 94rpx; /* 对应47px */
   background: linear-gradient(90deg, #1F2735 0%, #A100FE 48.08%);
   border-radius: 180rpx; /* 对应90px */
   display: flex;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
   transform: scaleX(-1); /* 镜像翻转效果 */
 }
 
-.btn-text {
+.agree-btn-text {
   font-family: 'Inter';
   font-weight: 400;
   font-size: 32rpx; /* 对应16px */
   line-height: 38rpx; /* 对应19px */
   color: #FFFFFF;
+  white-space: nowrap;
+  display: block;
 }
 
-.reject-btn .btn-text {
-  transform: scaleX(-1); /* 恢复文字的正常方向 */
+.reject-btn-text {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 32rpx; /* 对应16px */
+  line-height: 38rpx; /* 对应19px */
+  color: #FFFFFF;
+  white-space: nowrap;
+  display: block;
+  transform: scaleX(-1); /* 恢复拒绝按钮文字的正常方向 */
 }
 </style>

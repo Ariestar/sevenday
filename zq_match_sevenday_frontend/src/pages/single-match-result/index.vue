@@ -161,6 +161,8 @@
 <script>
 import SuccessModal from '../../components/SuccessModal.vue'
 import { recommendMatches, confirmMatch, rejectMatch } from '../../services/match'
+import { getUserInfo } from '../../services/auth'
+import authUtils from '../../utils/auth'
 
 export default {
   components: {
@@ -375,6 +377,66 @@ export default {
       if ((!this.recommendations || this.recommendations.length === 0) && !this.matchResult.id) {
         uni.showToast({
           title: '暂无匹配对象，无法组队',
+          icon: 'none',
+          duration: 2000
+        })
+        return
+      }
+      
+      // 检查是否是自己和自己组队
+      try {
+        // 获取当前用户信息
+        let currentUserInfo = authUtils.getUserInfo()
+        console.log('🔍 当前用户信息（本地）:', currentUserInfo)
+        
+        // 如果本地存储没有用户ID，尝试从服务器获取
+        if (!currentUserInfo || !currentUserInfo.id) {
+          try {
+            const serverUserInfo = await getUserInfo()
+            console.log('🔍 当前用户信息（服务器）:', serverUserInfo)
+            if (serverUserInfo) {
+              currentUserInfo = serverUserInfo
+              authUtils.setUserInfo(serverUserInfo)
+            }
+          } catch (err) {
+            console.warn('获取用户信息失败:', err)
+          }
+        }
+        
+        // 检查匹配到的用户ID是否与当前用户ID相同
+        const currentUserId = currentUserInfo?.id || uni.getStorageSync('userId')
+        const matchUserId = this.matchResult?.id
+        
+        console.log('🔍 用户ID检查:', {
+          currentUserId,
+          matchUserId,
+          isSame: currentUserId && matchUserId && String(matchUserId) === String(currentUserId)
+        })
+        
+        if (currentUserId && matchUserId && String(matchUserId) === String(currentUserId)) {
+          uni.showToast({
+            title: '不能和自己组队',
+            icon: 'none',
+            duration: 2000
+          })
+          return
+        }
+        
+        // 如果无法获取当前用户ID，也阻止匹配（安全起见）
+        if (!currentUserId) {
+          console.warn('⚠️ 无法获取当前用户ID，阻止匹配以确保安全')
+          uni.showToast({
+            title: '无法验证用户信息，请重新登录',
+            icon: 'none',
+            duration: 2000
+          })
+          return
+        }
+      } catch (err) {
+        console.error('检查用户ID失败:', err)
+        // 如果检查失败，阻止匹配以确保安全
+        uni.showToast({
+          title: '验证失败，请重试',
           icon: 'none',
           duration: 2000
         })

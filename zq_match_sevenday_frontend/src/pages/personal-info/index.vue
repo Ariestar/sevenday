@@ -57,11 +57,18 @@
 
         <!-- 学院 -->
         <view class="form-row">
-          <input 
-            v-model="userInfo.college" 
-            class="form-input" 
-            placeholder="学院" 
-          />
+          <picker 
+            mode="selector" 
+            :value="academyIndex" 
+            :range="academyOptions" 
+            range-key="name" 
+            @change="onAcademyChange"
+            class="form-picker"
+          >
+            <view class="picker-content">
+              <text class="picker-text">{{ userInfo.college || '学院' }}</text>
+            </view>
+          </picker>
         </view>
 
         <!-- 联系方式 -->
@@ -88,6 +95,7 @@
 <script>
 import { getUserInfo, updateUserInfo } from '../../services/auth'
 import { uploadAvatar } from '../../services/upload'
+import { getAcademies } from '../../services/academies'
 import authUtils from '../../utils/auth'
 import CustomTabBar from '../../components/CustomTabBar.vue'
 
@@ -101,6 +109,7 @@ export default {
         name: '',
         gender: '',
         college: '',
+        academyId: null, // 院系ID
         qq: '',
         avatar: ''
       },
@@ -108,16 +117,23 @@ export default {
         { value: 'male', label: '男' },
         { value: 'female', label: '女' }
       ],
+      academyOptions: [], // 院系选项列表
       saving: false
     }
   },
   computed: {
     genderIndex() {
       return this.genderOptions.findIndex(option => option.value === this.userInfo.gender)
+    },
+    academyIndex() {
+      if (!this.userInfo.academyId) return -1
+      return this.academyOptions.findIndex(opt => opt.id === this.userInfo.academyId)
     }
   },
-  onLoad() {
-    this.loadUserInfo()
+  async onLoad() {
+    // 先加载院系列表，再加载用户信息，这样可以正确匹配院系名称
+    await this.loadAcademies()
+    await this.loadUserInfo()
   },
   methods: {
     async loadUserInfo() {
@@ -133,10 +149,21 @@ export default {
             gender = 'female'
           }
           
+          // 如果有院系ID但没有名称，从已加载的院系列表中查找
+          let collegeName = info.academy_name || info.college || info.department || ''
+          const academyId = info.academy || null
+          if (academyId && !collegeName && this.academyOptions.length > 0) {
+            const academy = this.academyOptions.find(a => a.id === academyId)
+            if (academy) {
+              collegeName = academy.name
+            }
+          }
+          
           this.userInfo = {
-            name: info.name || '',
+            name: info.username || info.name || '',
             gender: gender || '',
-            college: info.college || info.department || '',
+            college: collegeName,
+            academyId: academyId,
             qq: info.qq || '',
             avatar: info.avatar || ''
           }
@@ -156,6 +183,52 @@ export default {
     onGenderChange(e) {
       const selectedOption = this.genderOptions[e.detail.value]
       this.userInfo.gender = selectedOption.value
+    },
+
+    async loadAcademies() {
+      try {
+        const academies = await getAcademies()
+        // 将嵌套的院系数据扁平化，包含父级和子级
+        const flatAcademies = []
+        academies.forEach(parent => {
+          // 添加父级院系
+          flatAcademies.push({ id: parent.id, name: parent.name })
+          // 添加子级院系
+          if (parent.children && parent.children.length > 0) {
+            parent.children.forEach(child => {
+              flatAcademies.push({ id: child.id, name: child.name })
+            })
+          }
+        })
+        this.academyOptions = flatAcademies
+        
+        // 如果已有院系ID但没有院系名称，根据ID查找名称
+        if (this.userInfo.academyId && !this.userInfo.college) {
+          const academy = flatAcademies.find(a => a.id === this.userInfo.academyId)
+          if (academy) {
+            this.userInfo.college = academy.name
+          }
+        }
+        // 如果有院系名称但没有ID，根据名称查找ID
+        else if (this.userInfo.college && !this.userInfo.academyId) {
+          const academy = flatAcademies.find(a => a.name === this.userInfo.college)
+          if (academy) {
+            this.userInfo.academyId = academy.id
+          }
+        }
+      } catch (err) {
+        console.error('加载院系列表失败:', err)
+        this.academyOptions = []
+      }
+    },
+
+    onAcademyChange(e) {
+      const index = e.detail.value
+      const academy = this.academyOptions[index]
+      if (academy) {
+        this.userInfo.college = academy.name
+        this.userInfo.academyId = academy.id
+      }
     },
 
     async chooseAvatar() {
@@ -206,19 +279,53 @@ export default {
       uni.showLoading({ title: '保存中...' })
 
       try {
-        // 准备要保存的数据
+        // 转换性别：前端使用 'male'/'female'，后端需要 1/2
+        let genderValue = null
+        if (this.userInfo.gender === 'male') {
+          genderValue = 1
+        } else if (this.userInfo.gender === 'female') {
+          genderValue = 2
+        } else if (this.userInfo.gender === 1 || this.userInfo.gender === 2) {
+          genderValue = this.userInfo.gender
+        }
+
+        // 准备要保存的数据（使用后端期望的字段名）
         const updateData = {
-          name: this.userInfo.name,
-          gender: this.userInfo.gender,
-          college: this.userInfo.college,
+          username: this.userInfo.name, // 后端期望 username，不是 name
           qq: this.userInfo.qq
+        }
+
+        // 如果有性别，添加性别字段
+        if (genderValue !== null) {
+          updateData.gender = genderValue
+        }
+
+        // 如果有院系ID，添加院系字段（后端期望 academy ID，不是 college 名称）
+        if (this.userInfo.academyId) {
+          updateData.academy = this.userInfo.academyId
         }
 
         // 调用更新接口
         const updatedInfo = await updateUserInfo(updateData)
         
-        // 更新本地用户信息
-        this.userInfo = { ...this.userInfo, ...updatedInfo }
+        // 转换后端返回的数据格式到前端格式
+        let gender = updatedInfo.gender
+        if (gender === 1 || gender === '男' || gender === 'MALE') {
+          gender = 'male'
+        } else if (gender === 2 || gender === '女' || gender === 'FEMALE') {
+          gender = 'female'
+        }
+        
+        // 更新本地用户信息（确保字段名正确映射）
+        this.userInfo = {
+          ...this.userInfo,
+          name: updatedInfo.username || updatedInfo.name || this.userInfo.name,
+          gender: gender || this.userInfo.gender,
+          college: updatedInfo.academy_name || this.userInfo.college,
+          academyId: updatedInfo.academy || this.userInfo.academyId,
+          qq: updatedInfo.qq || this.userInfo.qq,
+          avatar: updatedInfo.avatar || this.userInfo.avatar
+        }
         authUtils.setUserInfo(this.userInfo)
 
         uni.hideLoading()

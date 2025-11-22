@@ -25,13 +25,13 @@
       
       <!-- 已认证状态 -->
       <view v-else class="user-status-section">
-        <view class="user-welcome">
-          <text class="welcome-text">欢迎回来！</text>
-          <text class="user-name">{{ userInfo.name || userInfo.username || '用户' }}</text>
+        <view class="auth-prompt">
+          <text class="auth-title">{{ userInfo.name || userInfo.username || '用户' }}</text>
+          <text class="auth-subtitle">欢迎回来！</text>
         </view>
-        <view class="user-badge">
-          <text class="badge-text">已认证</text>
-        </view>
+        <button class="auth-btn" disabled>
+          <text class="auth-btn-text">已认证</text>
+        </button>
       </view>
     </view>
 
@@ -152,10 +152,10 @@ export default {
       // 登录成功后，强制从服务器重新加载用户信息以确保数据最新
       await this.loadUserInfo(true) // 强制刷新
       this.loginModalVisible = false
-      // 登录成功后跳转到个人信息页面
+      // 登录成功后跳转到报名页面（首页）填写信息
       setTimeout(() => {
         uni.navigateTo({
-          url: '/pages/personal-info/index'
+          url: '/pages/signup/index'
         })
       }, 500) // 延迟500ms，让登录成功提示先显示
     },
@@ -308,36 +308,13 @@ export default {
   display: none;
 }
 
-/* 已认证状态 */
-.user-welcome {
-  display: flex;
-  flex-direction: column;
+.auth-btn[disabled] {
+  opacity: 0.6;
 }
 
-.welcome-text {
+.auth-btn-text {
   font-size: 28rpx;
-  color: #666666;
-  line-height: 34rpx;
-  margin-bottom: 8rpx;
-}
-
-.user-name {
-  font-size: 36rpx;
-  font-weight: 600;
-  color: #333333;
-  line-height: 44rpx;
-}
-
-.user-badge {
-  background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
-  border-radius: 20rpx;
-  padding: 8rpx 16rpx;
-}
-
-.badge-text {
-  font-size: 24rpx;
   color: #FFFFFF;
-  line-height: 30rpx;
 }
 
 /* 功能菜单卡片 */
