@@ -212,9 +212,15 @@ class EmailLoginSerializer(serializers.Serializer):
     
     def validate_email(self, value):
         """验证武大邮箱格式"""
-        # 武大邮箱格式验证：@whu.edu.cn 或 @stu.whu.edu.cn
-        if not (value.endswith('@whu.edu.cn') or value.endswith('@stu.whu.edu.cn')):
-            raise serializers.ValidationError("请输入有效的武大邮箱")
+        # 武大邮箱格式验证：必须是13位+@whu.edu.cn
+        if not value.endswith('@whu.edu.cn'):
+            raise serializers.ValidationError("邮箱必须以@whu.edu.cn结尾")
+        
+        # 提取@符号前的部分
+        local_part = value.split('@')[0]
+        if len(local_part) != 13:
+            raise serializers.ValidationError("邮箱前缀必须是13位字符")
+        
         return value
     
     def validate(self, attrs):
@@ -297,8 +303,21 @@ class RegisterSerializer(serializers.Serializer):
         return value
 
     def validate_email(self, value):
-        if value and User.objects.filter(email=value).exists():
-            raise serializers.ValidationError("邮箱已被使用")
+        # 如果提供了邮箱，验证格式和唯一性
+        if value:
+            # 验证武大邮箱格式：必须是13位+@whu.edu.cn
+            if not value.endswith('@whu.edu.cn'):
+                raise serializers.ValidationError("邮箱必须以@whu.edu.cn结尾")
+            
+            # 提取@符号前的部分
+            local_part = value.split('@')[0]
+            if len(local_part) != 13:
+                raise serializers.ValidationError("邮箱前缀必须是13位字符")
+            
+            # 检查邮箱是否已被使用
+            if User.objects.filter(email=value).exists():
+                raise serializers.ValidationError("邮箱已被使用")
+        
         return value
 
     def create(self, validated_data):
@@ -321,8 +340,15 @@ class EmailVerifyCodeSerializer(serializers.Serializer):
     
     def validate_email(self, value):
         """验证武大邮箱格式"""
-        if not (value.endswith('@whu.edu.cn') or value.endswith('@stu.whu.edu.cn')):
-            raise serializers.ValidationError("请输入有效的武大邮箱")
+        # 武大邮箱格式验证：必须是13位+@whu.edu.cn
+        if not value.endswith('@whu.edu.cn'):
+            raise serializers.ValidationError("邮箱必须以@whu.edu.cn结尾")
+        
+        # 提取@符号前的部分
+        local_part = value.split('@')[0]
+        if len(local_part) != 13:
+            raise serializers.ValidationError("邮箱前缀必须是13位字符")
+        
         return value
 
 
@@ -335,8 +361,15 @@ class EmailVerifySerializer(serializers.Serializer):
     
     def validate_email(self, value):
         """验证武大邮箱格式"""
-        if not (value.endswith('@whu.edu.cn') or value.endswith('@stu.whu.edu.cn')):
-            raise serializers.ValidationError("请输入有效的武大邮箱")
+        # 武大邮箱格式验证：必须是13位+@whu.edu.cn
+        if not value.endswith('@whu.edu.cn'):
+            raise serializers.ValidationError("邮箱必须以@whu.edu.cn结尾")
+        
+        # 提取@符号前的部分
+        local_part = value.split('@')[0]
+        if len(local_part) != 13:
+            raise serializers.ValidationError("邮箱前缀必须是13位字符")
+        
         return value
     
     def validate_code(self, value):

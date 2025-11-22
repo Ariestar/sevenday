@@ -134,13 +134,46 @@ export default {
       })
     },
     
+    validateEmail(email) {
+      // 验证邮箱格式：必须是13位+@whu.edu.cn
+      if (!email || !email.trim()) {
+        return { valid: false, message: '请输入邮箱' }
+      }
+      
+      const trimmedEmail = email.trim()
+      
+      // 检查是否以@whu.edu.cn结尾
+      if (!trimmedEmail.endsWith('@whu.edu.cn')) {
+        return { valid: false, message: '邮箱必须以@whu.edu.cn结尾' }
+      }
+      
+      // 提取@符号前的部分
+      const localPart = trimmedEmail.split('@')[0]
+      if (localPart.length !== 13) {
+        return { valid: false, message: '邮箱前缀必须是13位字符' }
+      }
+      
+      return { valid: true, message: '' }
+    },
+    
     async handleGetCode() {
       if (this.codeCountdown > 0 || !this.formData.email) {
         return
       }
       
+      // 验证邮箱格式
+      const emailValidation = this.validateEmail(this.formData.email)
+      if (!emailValidation.valid) {
+        uni.showToast({
+          title: emailValidation.message,
+          icon: 'none',
+          duration: 2000
+        })
+        return
+      }
+      
       try {
-        await sendVerifyCode(this.formData.email)
+        await sendVerifyCode(this.formData.email.trim())
         uni.showToast({
           title: '验证码已发送',
           icon: 'success'
@@ -150,6 +183,14 @@ export default {
         this.startCountdown()
       } catch (err) {
         console.error('发送验证码失败:', err)
+        const errorMsg = err?.errMsg || err?.message || String(err)
+        if (errorMsg.includes('邮箱') || errorMsg.includes('13位')) {
+          uni.showToast({
+            title: errorMsg.includes('13位') ? '邮箱前缀必须是13位字符' : '邮箱格式不正确',
+            icon: 'none',
+            duration: 2000
+          })
+        }
       }
     },
     
@@ -171,6 +212,17 @@ export default {
     
     async handleLogin() {
       if (!this.canLogin) {
+        return
+      }
+      
+      // 验证邮箱格式
+      const emailValidation = this.validateEmail(this.formData.email)
+      if (!emailValidation.valid) {
+        uni.showToast({
+          title: emailValidation.message,
+          icon: 'none',
+          duration: 2000
+        })
         return
       }
       
@@ -209,12 +261,12 @@ export default {
         }
         
         console.log('发送验证请求:', {
-          email: this.formData.email,
+          email: this.formData.email.trim(),
           code: code,
           codeType: typeof code,
           codeLength: code.length
         })
-        const result = await verifyEmail(this.formData.email, code)
+        const result = await verifyEmail(this.formData.email.trim(), code)
         
         // 使用认证工具保存认证信息
         // result 已经是 data 字段的内容（request.js 已经提取）

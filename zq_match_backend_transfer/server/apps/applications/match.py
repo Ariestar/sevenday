@@ -220,7 +220,7 @@ def match(user_id: int, *, enforce_limit: bool = True):
     match_user = best.user
 
     # 组队（事务内）
-    team = Team.objects.create(name=f"{user.username}和{match_user.username}的队伍")
+    team = Team.objects.create(name="")  # 队名由用户自己设置
 
     user.team = team
     user.is_match = True

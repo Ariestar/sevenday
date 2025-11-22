@@ -43,11 +43,17 @@
         <view class="input-section">
           <input 
             class="student-input" 
+            :class="{ 'input-error': errorMessage }"
             type="text" 
             placeholder="请输入" 
             v-model="studentNumber"
+            @input="handleInput"
             placeholder-style="color: #CACDD9;"
           />
+          <!-- 错误提示 -->
+          <view v-if="errorMessage" class="error-message">
+            <text class="error-text">{{ errorMessage }}</text>
+          </view>
         </view>
         
         <!-- 确认按钮 -->
@@ -81,12 +87,16 @@ export default {
     return {
       studentNumber: '',
       hasPendingInvitation: false,
-      invitationInfo: null
+      invitationInfo: null,
+      currentStudentNo: null, // 当前用户的学号
+      errorMessage: '' // 错误提示信息
     }
   },
   onLoad() {
     // 检查是否有待处理的邀请
     this.checkPendingInvitation()
+    // 获取当前用户的学号
+    this.loadCurrentStudentNo()
   },
   onShow() {
     // 每次显示页面时也检查邀请（但不显示弹窗，只更新卡片）
@@ -94,6 +104,67 @@ export default {
     this.checkPendingInvitation()
   },
   methods: {
+    async loadCurrentStudentNo() {
+      // 获取当前用户的学号
+      try {
+        let currentUserInfo = authUtils.getUserInfo()
+        
+        // 如果本地存储没有学号，尝试从服务器获取
+        if (!currentUserInfo || (!currentUserInfo.school_number && !currentUserInfo.studentNo && !currentUserInfo.student_number)) {
+          try {
+            const serverUserInfo = await getUserInfo()
+            if (serverUserInfo) {
+              currentUserInfo = serverUserInfo
+              authUtils.setUserInfo(serverUserInfo)
+            }
+          } catch (err) {
+            console.warn('获取用户信息失败:', err)
+          }
+        }
+        
+        // 保存当前用户的学号
+        this.currentStudentNo = currentUserInfo?.school_number || currentUserInfo?.studentNo || currentUserInfo?.student_number || null
+        console.log('🔍 当前用户学号已加载:', this.currentStudentNo)
+      } catch (err) {
+        console.error('加载当前用户学号失败:', err)
+      }
+    },
+    
+    handleInput(e) {
+      // 实时检查输入的学号
+      const inputValue = e.detail.value.trim()
+      this.studentNumber = inputValue
+      
+      // 清空之前的错误提示
+      this.errorMessage = ''
+      
+      // 如果输入为空，不检查
+      if (!inputValue) {
+        return
+      }
+      
+      // 如果还没有加载当前用户学号，尝试加载
+      if (!this.currentStudentNo) {
+        this.loadCurrentStudentNo()
+        // 延迟检查，等待学号加载完成
+        setTimeout(() => {
+          this.checkStudentNumber(inputValue)
+        }, 100)
+      } else {
+        // 立即检查
+        this.checkStudentNumber(inputValue)
+      }
+    },
+    
+    checkStudentNumber(inputValue) {
+      // 检查输入的学号是否与当前用户学号相同
+      if (this.currentStudentNo && inputValue === String(this.currentStudentNo).trim()) {
+        this.errorMessage = '不能与自己组队'
+      } else {
+        this.errorMessage = ''
+      }
+    },
+    
     async checkPendingInvitation() {
       try {
         console.log('🔍 开始检查邀请...')
@@ -182,37 +253,28 @@ export default {
         return
       }
       
-      // 检查是否是自己和自己组队
+      // 如果已经有错误提示（比如不能与自己组队），直接返回
+      if (this.errorMessage) {
+        uni.showToast({
+          title: this.errorMessage,
+          icon: 'none',
+          duration: 2000
+        })
+        return
+      }
+      
+      // 再次检查是否是自己和自己组队（双重验证）
       try {
-        // 获取当前用户信息
-        let currentUserInfo = authUtils.getUserInfo()
-        console.log('🔍 当前用户信息（本地）:', currentUserInfo)
-        
-        // 如果本地存储没有学号，尝试从服务器获取
-        if (!currentUserInfo || (!currentUserInfo.school_number && !currentUserInfo.studentNo && !currentUserInfo.student_number)) {
-          try {
-            const serverUserInfo = await getUserInfo()
-            console.log('🔍 当前用户信息（服务器）:', serverUserInfo)
-            if (serverUserInfo) {
-              currentUserInfo = serverUserInfo
-              authUtils.setUserInfo(serverUserInfo)
-            }
-          } catch (err) {
-            console.warn('获取用户信息失败:', err)
-          }
+        // 如果还没有加载当前用户学号，先加载
+        if (!this.currentStudentNo) {
+          await this.loadCurrentStudentNo()
         }
         
         // 检查输入的学号是否与当前用户学号相同
-        const currentStudentNo = currentUserInfo?.school_number || currentUserInfo?.studentNo || currentUserInfo?.student_number
         const inputStudentNo = this.studentNumber.trim()
         
-        console.log('🔍 学号检查:', {
-          currentStudentNo,
-          inputStudentNo,
-          isSame: currentStudentNo && inputStudentNo === String(currentStudentNo).trim()
-        })
-        
-        if (currentStudentNo && inputStudentNo === String(currentStudentNo).trim()) {
+        if (this.currentStudentNo && inputStudentNo === String(this.currentStudentNo).trim()) {
+          this.errorMessage = '不能与自己组队'
           uni.showToast({
             title: '不能和自己组队',
             icon: 'none',
@@ -222,7 +284,7 @@ export default {
         }
         
         // 如果无法获取当前用户学号，也阻止匹配（安全起见）
-        if (!currentStudentNo) {
+        if (!this.currentStudentNo) {
           console.warn('⚠️ 无法获取当前用户学号，阻止匹配以确保安全')
           uni.showToast({
             title: '无法验证用户信息，请重新登录',
@@ -539,6 +601,23 @@ export default {
   line-height: 38rpx; /* 对应19px */
   color: #000000;
   box-sizing: border-box;
+}
+
+.student-input.input-error {
+  border-color: #FF6B6B; /* 错误状态下的边框颜色 */
+}
+
+.error-message {
+  margin-top: 20rpx;
+  padding-left: 30rpx;
+}
+
+.error-text {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 28rpx;
+  line-height: 34rpx;
+  color: #FF6B6B;
 }
 
 /* 确认按钮 */

@@ -1,6 +1,7 @@
 """
 匹配相关接口视图集（前端使用 /match/ 路径）
 """
+import re
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.permissions import IsAuthenticated
@@ -223,7 +224,7 @@ class MatchViewSet(viewsets.GenericViewSet):
             from django.db import transaction
             
             with transaction.atomic():
-                team = Team.objects.create(name=f"{user.username}和{target_user.username}的队伍")
+                team = Team.objects.create(name="")  # 队名由用户自己设置
                 
                 user.is_match = True
                 user.team = team
@@ -362,7 +363,7 @@ class MatchViewSet(viewsets.GenericViewSet):
             
             from django.db import transaction
             with transaction.atomic():
-                team = Team.objects.create(name=f"{user.username}和{target_user.username}的队伍")
+                team = Team.objects.create(name="")  # 队名由用户自己设置
                 
                 user.team = team
                 user.is_match = True
@@ -387,7 +388,7 @@ class MatchViewSet(viewsets.GenericViewSet):
             
             from django.db import transaction
             with transaction.atomic():
-                team = Team.objects.create(name=f"{user.username}和{invitation.inviter.username}的队伍")
+                team = Team.objects.create(name="")  # 队名由用户自己设置
                 
                 user.team = team
                 user.is_match = True
@@ -560,11 +561,21 @@ class MatchViewSet(viewsets.GenericViewSet):
             )
         
         # 检查队名是否已设置，如果已设置则不允许再次修改
-        if user.team.name and user.team.name.strip():
-            raise ApiException(
-                ResponseType.PermissionDenied,
-                msg="队名只能设置一次，不可二次更改",
-            )
+        # 但如果队名是系统自动生成的默认格式（"{username}和{username}的队伍"），则允许修改一次
+        current_name = user.team.name.strip() if user.team.name else ""
+        
+        if current_name:
+            # 检查是否是系统自动生成的默认队名格式
+            # 匹配格式：任意字符+和+任意字符+的队伍
+            is_auto_generated = re.match(r'^.+(和|与).+的队伍$', current_name)
+            
+            if not is_auto_generated:
+                # 不是自动生成的格式，说明用户已经设置过，不允许再次修改
+                raise ApiException(
+                    ResponseType.PermissionDenied,
+                    msg="队名只能设置一次，不可二次更改",
+                )
+            # 如果是自动生成的格式，允许修改一次
         
         if not team_name or not team_name.strip():
             raise ApiException(
