@@ -10,6 +10,14 @@ services:
       - redis
     ports:
       - "8000:8000"
+    environment:
+      # 邮件服务器配置（请根据实际情况修改）
+      - EMAIL_HOST=${EMAIL_HOST:-smtp.whu.edu.cn}
+      - EMAIL_PORT=${EMAIL_PORT:-587}
+      - EMAIL_USE_TLS=${EMAIL_USE_TLS:-True}
+      - EMAIL_USE_SSL=${EMAIL_USE_SSL:-False}
+      - EMAIL_HOST_USER=${EMAIL_HOST_USER:-}
+      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD:-}
     networks:
       - app-net
 
