@@ -209,6 +209,7 @@ export default {
         const result = await verifyEmail(this.formData.email, code)
         
         // 使用认证工具保存认证信息
+        // result 已经是 data 字段的内容（request.js 已经提取）
         authUtils.login(result.token, result.userInfo)
         
         uni.showToast({

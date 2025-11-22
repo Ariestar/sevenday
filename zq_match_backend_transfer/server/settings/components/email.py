@@ -20,6 +20,9 @@ EMAIL_HOST_USER = config("EMAIL_HOST_USER", "")  # 发件邮箱
 EMAIL_HOST_PASSWORD = config("EMAIL_HOST_PASSWORD", "")  # 发件邮箱密码或授权码
 DEFAULT_FROM_EMAIL = config("DEFAULT_FROM_EMAIL", EMAIL_HOST_USER)
 
+# SMTP连接超时设置（秒）
+EMAIL_TIMEOUT = config("EMAIL_TIMEOUT", 30, cast=int)  # 30秒超时
+
 # 开发环境：如果未配置邮件，使用控制台后端
 if not EMAIL_HOST_USER:
     EMAIL_BACKEND = "django.core.mail.backends.console.EmailBackend"

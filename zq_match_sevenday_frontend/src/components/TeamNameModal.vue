@@ -89,8 +89,8 @@ export default {
   bottom: 0;
   z-index: 9999;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
 }
 
 .modal-overlay {
@@ -99,17 +99,74 @@ export default {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
+}
+
+/* 顶部背景区域 */
+.header-background {
+  position: relative;
+  width: 100%;
+  height: 156rpx; /* 对应78px */
+  z-index: 10;
+}
+
+.banner-background {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background-image: url('/static/checkin/checkin-part1-banner-background.png');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.header-tabs {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  z-index: 10;
+}
+
+.tab-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20rpx 60rpx; /* 对应10px 30px */
+  margin-top: 80rpx;
+}
+
+.tab-item.active {
+  background: linear-gradient(180deg, #F7E8FE 0%, #F9ECFF 100%);
+  border-radius: 90rpx; /* 对应45px */
+  box-shadow: 0 4rpx 12rpx rgba(161, 0, 254, 0.3);
+}
+
+.tab-text {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 32rpx; /* 对应16px */
+  line-height: 38rpx; /* 对应19px */
+  color: #000000;
+}
+
+.tab-item.active .tab-text {
+  font-weight: 700;
 }
 
 .modal-content {
   position: relative;
   width: 620rpx; /* 对应310px */
   background: #FFFFFF;
-  border-radius: 24rpx; /* 对应12px */
+  border-radius: 24rpx; /* 四个角圆角 */
   padding: 60rpx 40rpx 40rpx; /* 对应30px 20px 20px */
-  margin: 0 40rpx;
+  margin: 0 auto;
+  margin-top: 200rpx; /* 增加间距，使内容块下移 */
   box-sizing: border-box;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.15); /* 添加阴影效果 */
+  z-index: 5;
 }
 
 /* 标题区域 */
@@ -120,8 +177,8 @@ export default {
 
 .modal-title {
   font-family: 'Inter';
-  font-weight: 700;
-  font-size: 36rpx; /* 对应18px */
+  font-weight: 400;
+  font-size: 55rpx; /* 对应18px */
   line-height: 44rpx; /* 对应22px */
   color: #1F2635;
   display: block;
@@ -132,24 +189,28 @@ export default {
   font-family: 'Inter';
   font-weight: 400;
   font-size: 28rpx; /* 对应14px */
-  line-height: 34rpx; /* 对应17px */
+  line-height: 40rpx; /* 增加行高 */
   color: #9094A6;
   display: block;
+  margin-bottom: 8rpx;
 }
 
 /* 输入区域 */
 .input-section {
   position: relative;
-  margin-bottom: 80rpx; /* 对应40px */
+  margin-bottom: 220rpx; /* 增加间距，使按钮下移 */
 }
 
 .team-name-input {
-  width: 100%;
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 400rpx;
   height: 96rpx; /* 对应48px */
   padding: 0 24rpx; /* 对应0 12px */
-  background: #F8F9FA;
-  border: 2rpx solid #E5E5E5; /* 对应1px */
-  border-radius: 12rpx; /* 对应6px */
+  background: #FFFFFF;
+  border: 4rpx solid #c05af3; /* 紫色边框 */
+  border-radius: 180rpx; /* 圆角 */
   font-family: 'Inter';
   font-weight: 400;
   font-size: 32rpx; /* 对应16px */
@@ -163,39 +224,22 @@ export default {
   background: #FFFFFF;
 }
 
-.char-count {
-  position: absolute;
-  right: 24rpx; /* 对应12px */
-  bottom: -40rpx; /* 对应-20px */
-  font-family: 'Inter';
-  font-weight: 400;
-  font-size: 24rpx; /* 对应12px */
-  line-height: 28rpx; /* 对应14px */
-  color: #9094A6;
-}
 
-/* 按钮组 */
-.button-group {
+/* 按钮区域 */
+.button-section {
   display: flex;
-  gap: 40rpx; /* 对应20px */
-}
-
-.cancel-btn, .confirm-btn {
-  flex: 1;
-  height: 88rpx; /* 对应44px */
-  border-radius: 90rpx; /* 对应45px */
-  display: flex;
-  align-items: center;
   justify-content: center;
 }
 
-.cancel-btn {
-  background: #F8F9FA;
-  border: 2rpx solid #E5E5E5; /* 对应1px */
-}
-
 .confirm-btn {
+  width: 300rpx; /* 缩短按钮长度 */
+  height: 105rpx; /* 对应47px */
   background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
+  border-radius: 180rpx; /* 对应90px */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
 }
 
 .confirm-btn.disabled {
@@ -203,22 +247,25 @@ export default {
   opacity: 0.6;
 }
 
+.confirm-icon {
+  font-size: 32rpx;
+  color: #FFFFFF;
+  font-weight: 700;
+}
+
 .btn-text {
   font-family: 'Inter';
   font-weight: 400;
   font-size: 32rpx; /* 对应16px */
   line-height: 38rpx; /* 对应19px */
-}
-
-.cancel-btn .btn-text {
-  color: #1F2635;
-}
-
-.confirm-btn .btn-text {
   color: #FFFFFF;
 }
 
 .confirm-btn.disabled .btn-text {
+  color: #9094A6;
+}
+
+.confirm-btn.disabled .confirm-icon {
   color: #9094A6;
 }
 </style>

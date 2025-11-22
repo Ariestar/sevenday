@@ -32,6 +32,9 @@ class Post(models.Model):
     # 是否发布到广场
     is_published = models.BooleanField(default=False, verbose_name="是否发布到广场")
     
+    # 浏览量
+    view_count = models.IntegerField(default=0, verbose_name="浏览量")
+    
     # 时间字段
     create_time = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     update_time = models.DateTimeField(auto_now=True, verbose_name="更新时间")

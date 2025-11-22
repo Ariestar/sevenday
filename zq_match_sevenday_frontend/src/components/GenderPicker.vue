@@ -1,8 +1,8 @@
 <template>
   <view v-if="visible" class="popup-mask" @click="handleClose">
-    <view class="major-picker-popup" @click.stop>
+    <view class="gender-picker-popup" @click.stop>
       <view class="popup-content">
-        <text class="popup-title">请选择大类</text>
+        <text class="popup-title">请选择性别</text>
         <view class="options-container">
           <button
             v-for="(option, index) in options"
@@ -21,7 +21,7 @@
 
 <script>
 export default {
-  name: 'MajorCategoryPicker',
+  name: 'GenderPicker',
   props: {
     visible: {
       type: Boolean,
@@ -58,7 +58,7 @@ export default {
     selectOption(option) {
       this.selectedValue = option.value
       this.$emit('input', option.value)
-      this.$emit('change', option)
+      this.$emit('change', option) // 传递整个选项对象
       this.handleClose()
     },
     handleClose() {
@@ -82,7 +82,7 @@ export default {
   justify-content: center;
 }
 
-.major-picker-popup {
+.gender-picker-popup {
   width: 100%;
   background: #FFFFFF;
   border-radius: 30rpx 30rpx 0rpx 0rpx;
@@ -140,3 +140,6 @@ export default {
   border: none;
 }
 </style>
+
+
+

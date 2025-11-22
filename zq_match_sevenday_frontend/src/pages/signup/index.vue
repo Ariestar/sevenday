@@ -113,15 +113,11 @@
         <!-- 个人简介 -->
         <view class="form-row">
           <text class="form-label">个人简介</text>
-          <view class="bio-input-wrapper">
             <input 
               v-model="formData.bio" 
               class="form-input-field" 
               placeholder="一句话概括一下自己吧~" 
-              maxlength="500"
             />
-            <text class="char-count">{{ (formData.bio || '').length }}/500</text>
-          </view>
         </view>
 
         <!-- 学号（隐藏显示，但需要填写） -->
@@ -619,9 +615,10 @@ export default {
 .signup-page {
   position: relative;
   width: 750rpx;
-  height: 1624rpx;
+  min-height: 100vh;
   background: #FFFFFF;
   padding-bottom: 120rpx;
+  overflow-x: hidden;
 }
 
 /* 状态栏 */
@@ -652,9 +649,11 @@ export default {
 .mask-group {
   position: absolute;
   left: 0rpx;
-  top: 0rpx;
+  top: -538rpx;
   width: 750rpx;
-  height: 442rpx;
+  height: 980rpx;
+  overflow: hidden;
+  z-index: 1;
 }
 
 .gradient-mask {
@@ -662,39 +661,48 @@ export default {
   width: 750rpx;
   height: 442rpx;
   left: 0rpx;
-  top: 0rpx;
+  top: 538rpx;
   background: linear-gradient(180deg, #AA00FF 0%, #FFBDE7 100%);
+  z-index: 2;
 }
 
 .background-image {
   position: absolute;
-  width: 906rpx;
-  height: 1610rpx;
-  left: -130rpx;
-  top: -538rpx;
+  width: 750rpx;
+  height: 600rpx;
+  left: 0rpx;
+  top: -1rpx;
+  z-index: 1;
 }
 
 /* 标签切换区域 */
 .tab-section {
   position: absolute;
-  left: 138rpx;
-  top: 72rpx;
+  left: 50%;
+  top: 150rpx;
+  transform: translateX(-50%);
   z-index: 3;
 }
 
 .tab-group {
   display: flex;
-  gap: 324rpx;
+  gap: 290rpx;
 }
 
 .tab-item {
   position: relative;
+  display: inline-block;
+  writing-mode: horizontal-tb;
 }
 
 .tab-text {
   font-size: 32rpx;
   color: rgba(255, 255, 255, 0.8);
   font-weight: 400;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  white-space: nowrap;
+  display: inline-block;
 }
 
 .tab-text.active {
@@ -717,7 +725,7 @@ export default {
 .avatar-section {
   position: absolute;
   left: 50%;
-  top: 190rpx;
+  top: 250rpx;
   transform: translateX(-50%);
   z-index: 3;
   display: flex;
@@ -774,7 +782,7 @@ export default {
   width: 622rpx;
   height: 2rpx;
   left: 64rpx;
-  top: 260rpx;
+  top: 220rpx;
   background: #F7E7FF;
   transform: rotate(-0.19deg);
 }
@@ -783,11 +791,28 @@ export default {
 .info-header {
   position: absolute;
   left: 64rpx;
-  top: 180rpx;
+  top: 140rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
   width: 622rpx;
+}
+
+.info-title-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.info-icon {
+  width: 66rpx;
+  height: 52rpx;
+}
+
+.info-title {
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1F2635;
 }
 
 .header-buttons {
@@ -809,26 +834,7 @@ export default {
   justify-content: center;
 }
 
-.info-title-row {
-  display: flex;
-  align-items: center;
-  gap: 16rpx;
-}
-
-.info-icon {
-  width: 66rpx;
-  height: 52rpx;
-}
-
-.info-title {
-  font-size: 32rpx;
-  font-weight: 700;
-  color: #1F2635;
-}
-
 .save-btn {
-  position: absolute;
-  right: 0rpx;
   width: 130rpx;
   height: 64rpx;
   background: #1F2635;
@@ -845,7 +851,7 @@ export default {
 .form-container {
   position: absolute;
   left: calc(50% - 624rpx/2 + 2rpx);
-  top: 290rpx;
+  top: 250rpx;
   width: 624rpx;
   height: 660rpx;
 }
@@ -955,27 +961,6 @@ export default {
   color: #1F2635;
 }
 
-/* 个人简介输入框包装器 */
-.bio-input-wrapper {
-  position: relative;
-  width: 474rpx;
-}
-
-.bio-input-wrapper .form-input-field {
-  position: relative;
-  padding-right: 100rpx; /* 为字符计数留出空间 */
-}
-
-.char-count {
-  position: absolute;
-  right: 32rpx;
-  top: 50%;
-  transform: translateY(-50%);
-  font-size: 20rpx;
-  color: #9094A6;
-  pointer-events: none;
-}
-
 /* 通用输入框样式 */
 .form-input-field input {
   width: 100%;
@@ -1007,8 +992,8 @@ export default {
 .submit-section {
   position: absolute;
   left: 50%;
-  top: calc(290rpx + 610rpx + 64rpx);
-  margin-top: 8vh;
+  top: calc(250rpx + 610rpx + 64rpx);
+  margin-top: 1vh;
   transform: translateX(-50%);
 }
 
@@ -1038,6 +1023,48 @@ export default {
 .submit-section .submit-btn-main {
   position: relative;
   left: -6rpx;
+}
+
+/* 未提交报名表提示弹窗 */
+.not-submitted-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10000;
+}
+
+.not-submitted-modal {
+  width: 500rpx;
+  height: 500rpx;
+  background: #FFFFFF;
+  border-radius: 24rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60rpx 40rpx;
+  box-sizing: border-box;
+  box-shadow: 0 8rpx 32rpx rgba(0, 0, 0, 0.15);
+}
+
+.not-submitted-icon {
+  width: 200rpx;
+  height: 200rpx;
+  margin-bottom: 40rpx;
+}
+
+.not-submitted-text {
+  font-size: 32rpx;
+  color: #000000;
+  font-weight: 400;
+  text-align: center;
+  line-height: 44rpx;
 }
 </style>
 

@@ -108,12 +108,14 @@ export default {
     uni.$emit('tabbar-update')
   },
   methods: {
-    async loadUserInfo() {
-      // 优先从本地存储获取用户信息
-      const localUserInfo = authUtils.getUserInfo()
-      if (localUserInfo) {
-        this.userInfo = localUserInfo
-        return
+    async loadUserInfo(forceRefresh = false) {
+      // 如果不是强制刷新，优先从本地存储获取用户信息
+      if (!forceRefresh) {
+        const localUserInfo = authUtils.getUserInfo()
+        if (localUserInfo) {
+          this.userInfo = localUserInfo
+          return
+        }
       }
       
       // 如果有token，尝试从服务器获取
@@ -129,6 +131,12 @@ export default {
           // 如果获取失败，可能token已过期，清除本地存储
           authUtils.logout()
         }
+      } else {
+        // 如果没有token，尝试从本地存储获取
+        const localUserInfo = authUtils.getUserInfo()
+        if (localUserInfo) {
+          this.userInfo = localUserInfo
+        }
       }
     },
     
@@ -141,13 +149,10 @@ export default {
     },
     
     async handleLoginSuccess(userInfo) {
-      // 登录成功后，重新加载用户信息以确保数据最新
-      await this.loadUserInfo()
+      // 登录成功后，强制从服务器重新加载用户信息以确保数据最新
+      await this.loadUserInfo(true) // 强制刷新
       this.loginModalVisible = false
-      uni.showToast({
-        title: '登录成功',
-        icon: 'success'
-      })
+      // 注意：LoginModal 已经显示了"登录成功"的提示，这里不需要重复显示
     },
     
     handleAvatarClick() {

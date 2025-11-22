@@ -4,7 +4,8 @@
       "path": "pages/signup/index",
       "style": {
         "navigationBarTitleText": "报名信息",
-        "navigationBarBackgroundColor": "#ffffff"
+        "navigationBarBackgroundColor": "#ffffff",
+        "navigationStyle": "custom"
       }
     },
     {

@@ -4,7 +4,8 @@ from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import filters
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q
+from django.db.models import Q, Max, Case, When
+from django.db import models
 from django.utils import timezone
 
 from server.utils.pagination import StandardResultsSetPagination
@@ -569,16 +570,39 @@ class PostViewSet(
     @action(methods=["get"], detail=False, url_path="list")
     def square_list(self, request):
         """获取广场列表（分页的打卡记录）- 前端接口"""
-        page = int(request.query_params.get('page', 1))
-        page_size = int(request.query_params.get('pageSize', 20))
-        
-        # 只获取发布到广场的打卡记录，按创建时间倒序
-        queryset = Post.objects.filter(is_published=True).select_related('task', 'team').prefetch_related('likes', 'comments').order_by('-create_time')
-        
-        # 手动分页
-        start = (page - 1) * page_size
-        end = start + page_size
-        posts = queryset[start:end]
+        try:
+            page = int(request.query_params.get('page', 1))
+            page_size = int(request.query_params.get('pageSize', 20))
+            sort_type = request.query_params.get('sort', 'latest')  # latest: 最新发布, comment: 最新评论
+            
+            # 只获取发布到广场的打卡记录
+            queryset = Post.objects.filter(is_published=True).select_related('task', 'team').prefetch_related('likes', 'comments')
+            
+            # 根据排序类型排序
+            if sort_type == 'comment':
+                # 按最新评论时间排序：使用 Max 聚合获取每条打卡的最新评论时间
+                # 对于没有评论的打卡，latest_comment_time 为 None，会排在最后
+                queryset = queryset.annotate(
+                    latest_comment_time=Max('comments__create_time')
+                ).order_by(
+                    '-latest_comment_time',  # 先按最新评论时间倒序（None 会排在最后）
+                    '-create_time'  # 如果评论时间相同或为 None，按创建时间倒序
+                )
+            else:
+                # 默认按最新发布排序
+                queryset = queryset.order_by('-create_time')
+            
+            # 手动分页
+            start = (page - 1) * page_size
+            end = start + page_size
+            posts = queryset[start:end]
+        except Exception as e:
+            import traceback
+            error_msg = f"获取广场列表失败: {str(e)}\n{traceback.format_exc()}"
+            raise ApiException(
+                ResponseType.InternalServerError,
+                msg=error_msg,
+            )
         
         result = []
         user = request.user
@@ -609,6 +633,7 @@ class PostViewSet(
                 'taskTitle': post.task.title if post.task else None,
                 'likeCount': like_count,
                 'commentCount': comment_count,
+                'viewCount': post.view_count,
                 'isLiked': is_liked,
                 'createTime': post.create_time.isoformat() if post.create_time else None,
             })
@@ -687,6 +712,11 @@ class PostViewSet(
                 msg="打卡记录不存在",
             )
         
+        # 增加浏览量（使用 F() 避免并发问题）
+        from django.db.models import F
+        Post.objects.filter(id=post_id).update(view_count=F('view_count') + 1)
+        post.refresh_from_db()  # 刷新对象以获取最新的浏览量
+        
         user = request.user
         
         # 检查当前用户是否已点赞
@@ -698,16 +728,18 @@ class PostViewSet(
         likes = post.likes.select_related('user')[:10]
         like_users = [{'userId': like.user.id, 'username': like.user.username, 'avatar': request.build_absolute_uri(like.user.avatar.url) if like.user.avatar else None} for like in likes]
         
-        # 获取评论列表
-        comments = post.comments.select_related('user').all()
+        # 获取评论列表（按时间正序，最早的在前面）
+        comments = post.comments.select_related('user').order_by('create_time')
         comment_list = []
         for comment in comments:
+            # 确保评论内容不为空
+            comment_content = comment.content if comment.content else ''
             comment_list.append({
                 'commentId': comment.id,
                 'userId': comment.user.id,
-                'username': comment.user.username,
+                'username': comment.user.username or '匿名用户',
                 'avatar': request.build_absolute_uri(comment.user.avatar.url) if comment.user.avatar else None,
-                'content': comment.content,
+                'content': comment_content,  # 确保评论内容字段存在
                 'createTime': comment.create_time.isoformat() if comment.create_time else None,
             })
         
@@ -725,6 +757,7 @@ class PostViewSet(
             'taskTitle': post.task.title if post.task else None,
             'likeCount': post.likes.count(),
             'commentCount': post.comments.count(),
+            'viewCount': post.view_count,
             'isLiked': is_liked,
             'likeUsers': like_users,
             'comments': comment_list,
@@ -771,16 +804,49 @@ class PostViewSet(
             content=content
         )
         
+        # 确保评论内容不为空
+        comment_content = comment.content if comment.content else ''
+        
         return Response({
             'msg': '评论成功',
             'commentId': comment.id,
             'comment': {
                 'commentId': comment.id,
                 'userId': comment.user.id,
-                'username': comment.user.username,
+                'username': comment.user.username or '匿名用户',
                 'avatar': request.build_absolute_uri(comment.user.avatar.url) if comment.user.avatar else None,
-                'content': comment.content,
+                'content': comment_content,  # 确保评论内容字段存在
                 'createTime': comment.create_time.isoformat() if comment.create_time else None,
             },
             'commentCount': post.comments.count(),
+        })
+    
+    @action(methods=["get"], detail=False, url_path="share")
+    def square_share(self, request):
+        """获取分享链接 - 前端接口"""
+        post_id = request.query_params.get('postId')
+        
+        if not post_id:
+            raise ApiException(
+                ResponseType.ParamValidationFailed,
+                msg="请提供postId参数",
+            )
+        
+        try:
+            post = Post.objects.get(id=post_id)
+        except Post.DoesNotExist:
+            raise ApiException(
+                ResponseType.ResourceNotFound,
+                msg="打卡记录不存在",
+            )
+        
+        # 构建分享链接（使用前端页面路径）
+        # 假设前端路由为 /pages/square-detail/index?postId=xxx
+        share_url = f"{request.scheme}://{request.get_host()}/pages/square-detail/index?postId={post_id}"
+        
+        return Response({
+            'shareUrl': share_url,
+            'postId': post.id,
+            'title': post.title,
+            'photo': request.build_absolute_uri(post.photo.url) if post.photo else None,
         })

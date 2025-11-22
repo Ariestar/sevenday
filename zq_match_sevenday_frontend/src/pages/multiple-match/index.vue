@@ -8,15 +8,13 @@
     <view class="tab-section">
       <view class="tab-group">
         <view class="tab-item" @click="goToSignup">
-          <view class="tab-bg"></view>
           <text class="tab-text">报名</text>
         </view>
         <view class="tab-item active">
-          <view class="tab-bg"></view>
           <text class="tab-text active">匹配</text>
-          <view class="tab-indicator"></view>
         </view>
       </view>
+      <view class="tab-indicator"></view>
     </view>
 
     <!-- 主要内容区域 -->
@@ -278,9 +276,9 @@ export default {
 .top-gradient-bg {
   position: absolute;
   width: 100%;
-  height: 246rpx; /* 对应123px */
+  height: 300rpx; /* 增加高度，覆盖更多页眉 */
   left: 0;
-  top: 0;
+  top: -50rpx; /* 向上延伸，覆盖状态栏/页眉区域 */
   background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
   z-index: 1;
 }
@@ -290,7 +288,7 @@ export default {
   width: 100%;
   height: 90rpx; /* 对应45px */
   left: 0;
-  top: 156rpx; /* 对应78px */
+  top: 220rpx; /* 下移，避免覆盖按钮 */
   background: linear-gradient(180deg, #F7E8FE 0%, #F9ECFF 100%);
   z-index: 2;
 }
@@ -298,27 +296,23 @@ export default {
 /* 标签切换区域 */
 .tab-section {
   position: absolute;
-  width: 472rpx; /* 对应236px */
+  width: auto;
   height: 74rpx; /* 对应37px */
-  left: 170rpx; /* 对应85px */
-  top: 50rpx; /* 对应25px */
+  left: 50%;
+  top: 150rpx;
+  transform: translateX(-50%);
   z-index: 10;
 }
 
 .tab-group {
   display: flex;
-  width: 100%;
-  height: 100%;
-  position: relative;
+  gap: 290rpx;
 }
 
 .tab-item {
   position: relative;
-  width: 148rpx; /* 对应74px */
-  height: 74rpx; /* 对应37px */
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: inline-block;
+  writing-mode: horizontal-tb;
 }
 
 .tab-bg {
@@ -330,19 +324,17 @@ export default {
 }
 
 .tab-text {
-  font-family: 'Inter';
+  font-size: 32rpx;
+  color: rgba(255, 255, 255, 0.8);
   font-weight: 400;
-  font-size: 32rpx; /* 对应16px */
-  line-height: 38rpx; /* 对应19px */
-  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  color: transparent;
-  z-index: 3;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
+  white-space: nowrap;
+  display: inline-block;
 }
 
 .tab-text.active {
+  color: #FFFFFF;
   font-weight: 700;
 }
 
@@ -352,20 +344,21 @@ export default {
 
 .tab-indicator {
   position: absolute;
-  width: 120rpx; /* 对应60px */
-  height: 36rpx; /* 对应18px */
-  left: 14rpx; /* 居中对齐 */
-  bottom: -8rpx; /* 对应-4px，向下调整 */
-  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
+  width: 120rpx;
+  height: 36rpx;
+  left: calc(50% + 145rpx);
+  top: 30rpx;
+  transform: translateX(-50%);
+  background: #FFFFFF;
   opacity: 0.4;
-  border-radius: 180rpx; /* 对应90px */
+  border-radius: 90rpx;
 }
 
 /* 主要内容区域 */
 .main-content {
   position: relative;
   z-index: 5;
-  padding-top: 222rpx; /* 对应111px */
+  padding-top: 320rpx; /* 增加padding-top，整体下移 */
   padding-left: 44rpx; /* 对应22px */
   padding-right: 44rpx; /* 对应22px */
 }

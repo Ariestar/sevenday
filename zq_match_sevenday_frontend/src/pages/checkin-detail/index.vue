@@ -206,15 +206,25 @@ export default {
     uni.$on('checkin-updated', this.handleCheckinUpdate)
   },
   async onShow() {
-    await this.checkTeamStatus()
+    // 检查是否是新创建的队伍（只在首次进入时检查）
+    const justCreatedTeam = uni.getStorageSync('justCreatedTeam')
+    if (justCreatedTeam) {
+      // 如果是新创建的队伍，重新检查状态（这会触发弹窗）
+      await this.checkTeamStatus()
+    } else {
+      // 如果不是新创建的队伍，只更新数据
+      await this.checkTeamStatus()
+    }
+    
     // 如果已有队伍，重新加载打卡数据以确保同步
-    if (this.hasTeam) {
+    if (this.hasTeam && !this.showTeamNameModal) {
       await this.loadCheckinData()
     }
     // 触发TabBar更新，确保选中状态正确
     uni.$emit('tabbar-update')
   },
   onLoad() {
+    // 首次加载时检查队伍状态（会处理新创建队伍的弹窗）
     this.checkTeamStatus()
     // 监听打卡更新事件
     uni.$on('checkin-updated', this.handleCheckinUpdate)
@@ -372,36 +382,61 @@ export default {
         const teamNameFromStorage = uni.getStorageSync('teamName')
         const hasTeamName = (teamNameFromAPI && teamNameFromAPI.trim()) || (teamNameFromStorage && teamNameFromStorage.trim())
         
-        if (!hasTeamName) {
-          // 队名未设置，显示创建队名弹窗
+        console.log('🔍 检查队名状态:', {
+          justCreatedTeam: this.justCreatedTeam,
+          hasTeam: this.hasTeam,
+          teamNameFromAPI,
+          teamNameFromStorage,
+          hasTeamName,
+          showTeamNameModal: this.showTeamNameModal
+        })
+        
+        if (!hasTeamName && !this.showTeamNameModal) {
+          // 队名未设置且弹窗未显示，显示创建队名弹窗
+          console.log('✅ 显示创建队名弹窗')
           this.showTeamNameModal = true
-        } else {
-          // 队名已设置，更新当前队名
+          // 清除标志，避免重复显示（但保留到弹窗关闭时再清除，确保弹窗能显示）
+          // 注意：这里先不清除，等用户确认或取消后再清除
+        } else if (hasTeamName) {
+          // 队名已设置，更新当前队名，清除标志
+          console.log('ℹ️ 队名已存在，不显示弹窗')
           this.currentTeamName = teamNameFromAPI || teamNameFromStorage
+          uni.removeStorageSync('justCreatedTeam')
+          this.justCreatedTeam = false
+          this.loadCheckinData()
         }
-        uni.removeStorageSync('justCreatedTeam')
-      } else if (this.hasTeam) {
+        // 如果弹窗已显示，不重复处理
+      } else if (this.hasTeam && !this.showTeamNameModal) {
         this.loadCheckinData()
       }
     },
 
     handleTeamNameCancel() {
+      // 先保存标志状态
+      const wasJustCreated = this.justCreatedTeam
+      
       this.showTeamNameModal = false
+      // 清除标志，避免重复显示弹窗
+      uni.removeStorageSync('justCreatedTeam')
+      this.justCreatedTeam = false
 
-      if (this.justCreatedTeam) {
+      // 如果是新创建的队伍，询问是否使用默认队名
+      if (wasJustCreated) {
         uni.showModal({
           title: '提示',
           content: '不创建队名将使用默认队名，确定吗？',
           success: (res) => {
             if (res.confirm) {
               this.currentTeamName = '默认队名'
-              this.justCreatedTeam = false
               uni.setStorageSync('teamName', '默认队名')
               uni.setStorageSync('hasTeam', true)
               this.showTeamCreatedModal = true
               this.loadCheckinData()
             } else {
+              // 用户取消，重新显示弹窗
               this.showTeamNameModal = true
+              uni.setStorageSync('justCreatedTeam', true)
+              this.justCreatedTeam = true
             }
           }
         })
@@ -420,6 +455,8 @@ export default {
         
         this.showTeamNameModal = false
         this.currentTeamName = teamName
+        // 清除标志，避免重复显示弹窗
+        uni.removeStorageSync('justCreatedTeam')
         this.justCreatedTeam = false
 
         // 更新本地存储
@@ -738,16 +775,7 @@ export default {
   height: 156rpx; /* 对应78px */
 }
 
-.banner-background {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background-image: url('/static/checkin/checkin-part2-banner-background.png');
-  background-size: cover;
-  background-position: center;
-  background-repeat: no-repeat;
-  z-index: 1;
-}
+
 
 .header-tabs {
   position: absolute;

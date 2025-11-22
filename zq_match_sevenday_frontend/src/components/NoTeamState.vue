@@ -84,13 +84,21 @@ export default {
 
 .header-tabs {
   display: flex;
-  justify-content: center;
-  gap: 120rpx; /* 对应60px */
+  justify-content: space-around;
+  align-items: center;
+  padding: 0 40rpx;
 }
 
 .header-tab {
   position: relative;
-  padding: 20rpx 40rpx; /* 对应10px 20px */
+  padding: 20rpx 60rpx; /* 对应10px 30px */
+  background: rgba(255, 255, 255, 0.9); /* 未激活状态：浅色背景 */
+  border-radius: 90rpx; /* 对应45px */
+  transition: all 0.3s ease;
+}
+
+.header-tab.active {
+  background: transparent; /* 激活状态：透明背景，显示渐变 */
 }
 
 .tab-text {
@@ -98,15 +106,12 @@ export default {
   font-weight: 400;
   font-size: 32rpx; /* 对应16px */
   line-height: 38rpx; /* 对应19px */
-  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-  color: transparent;
+  color: #000000; /* 深色文字 */
 }
 
 .header-tab.active .tab-text {
   font-weight: 700;
+  color: #000000; /* 激活状态也是深色 */
 }
 
 .header-tab.disabled .tab-text {
@@ -121,9 +126,8 @@ export default {
   transform: translateX(-50%);
   width: 120rpx; /* 对应60px */
   height: 6rpx; /* 对应3px */
-  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
+  background: rgba(255, 255, 255, 0.8); /* 白色指示线 */
   border-radius: 6rpx;
-  opacity: 0.8;
 }
 
 /* 内容区域 */
