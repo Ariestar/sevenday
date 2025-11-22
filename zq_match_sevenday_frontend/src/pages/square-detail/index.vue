@@ -16,7 +16,7 @@
       <view class="team-card">
         <view class="team-avatar-circle">
           <image 
-            :src="postData.avatar1 || '/static/square/user-icon.png'" 
+            :src="processedAvatar1" 
             class="avatar-image" 
             mode="aspectFill"
           />
@@ -66,7 +66,7 @@
       <view class="action-buttons-card">
         <view class="like-button" @click="toggleLike">
           <image 
-            :src="postData.isLiked ? '/static/square/Liked-logo.png' : '/static/square/detail-like.png'" 
+            :src="postData.isLiked ? '/static/square/Liked-logo.png' : '/static/square/Like-logo.png'" 
             class="button-icon" 
             mode="aspectFit" 
           />
@@ -76,10 +76,13 @@
           <image src="/static/square/detail-comment.png" class="button-icon" mode="aspectFit" />
           <text class="button-text">评论</text>
         </view>
-        <view class="share-button" @click="sharePost">
-          <image src="/static/square/detail-share.png" class="button-icon" mode="aspectFit" />
-          <text class="button-text">分享</text>
-        </view>
+        <!-- 分享按钮：使用 button 组件的 open-type="share" 触发分享 -->
+        <button class="share-button" open-type="share" plain hover-class="button-hover">
+          <view class="button-content">
+            <image src="/static/square/detail-share.png" class="button-icon" mode="aspectFit" />
+            <text class="button-text">分享</text>
+          </view>
+        </button>
       </view>
       
       <!-- 评论列表 Card -->
@@ -93,7 +96,7 @@
           >
             <view class="comment-header">
               <image 
-                :src="comment.avatar || '/static/square/user-icon.png'" 
+                :src="getCommentAvatar(comment)" 
                 class="comment-avatar" 
                 mode="aspectFill"
               />
@@ -150,6 +153,7 @@
 <script>
 import { getSquareDetail, toggleLike, submitComment } from '@/services/square'
 import CustomTabBar from '../../components/CustomTabBar.vue'
+import { processAvatarUrl } from '../../utils/image'
 
 export default {
   components: {
@@ -165,10 +169,27 @@ export default {
       commentContent: ''
     }
   },
+  computed: {
+    processedAvatar1() {
+      if (!this.postData || !this.postData.avatar1) {
+        return '/static/square/user-icon.png'
+      }
+      const processed = processAvatarUrl(this.postData.avatar1)
+      if (processed.includes('default.jpg')) {
+        return '/static/square/user-icon.png'
+      }
+      return processed
+    }
+  },
   onLoad(options) {
     console.log('📋 广场详情页面加载，options:', options)
     if (options.id) {
       this.postId = options.id
+      console.log('📋 设置postId:', this.postId)
+      this.loadDetail()
+    } else if (options.postId) {
+      // 兼容 postId 参数
+      this.postId = options.postId
       console.log('📋 设置postId:', this.postId)
       this.loadDetail()
     } else {
@@ -180,6 +201,88 @@ export default {
       setTimeout(() => {
         uni.navigateBack()
       }, 1500)
+    }
+  },
+  // 分享给好友功能
+  onShareAppMessage(res) {
+    // 如果是从分享按钮触发的
+    if (res.from === 'button') {
+      console.log('📤 分享按钮被点击', res.target)
+    }
+    
+    // 构建分享内容
+    let shareTitle = '专交遇见你 - 七天打卡活动'
+    if (this.postData) {
+      const teamName = this.postData.teamName || '未命名队伍'
+      const day = this.postData.day || 1
+      const taskName = this.postData.taskName || ''
+      
+      // 优化分享标题，使其更有吸引力
+      if (taskName) {
+        shareTitle = `【${teamName}】第${day}天打卡：${taskName.substring(0, 20)}${taskName.length > 20 ? '...' : ''} - 专交遇见你`
+      } else {
+        shareTitle = `【${teamName}】第${day}天打卡完成！一起来挑战七天打卡吧 - 专交遇见你`
+      }
+    }
+    
+    const sharePath = this.postId 
+      ? `/pages/square-detail/index?id=${this.postId}`
+      : '/pages/square/index'
+    
+    // 使用打卡图片作为分享图片（优先使用第一张图片）
+    // 微信小程序分享图片必须是完整的 HTTPS URL，不能是相对路径
+    let shareImage = ''
+    if (this.postData) {
+      if (this.postData.images && this.postData.images.length > 0) {
+        shareImage = this.postData.images[0]
+      } else if (this.postData.photo) {
+        shareImage = this.postData.photo
+      }
+      
+      // 确保图片 URL 是完整的网络地址（必须以 http:// 或 https:// 开头）
+      // 如果是相对路径或本地路径，则不设置 shareImage，使用小程序默认图片
+      if (shareImage && !shareImage.startsWith('http://') && !shareImage.startsWith('https://')) {
+        shareImage = ''
+      }
+    }
+    
+    console.log('📤 分享打卡记录:', {
+      title: shareTitle,
+      path: sharePath,
+      imageUrl: shareImage || '使用小程序默认图片'
+    })
+    
+    return {
+      title: shareTitle,
+      path: sharePath,
+      imageUrl: shareImage // 分享图片（必须是完整 HTTPS URL，否则使用小程序默认图片）
+    }
+  },
+  // 分享到朋友圈功能（仅微信小程序支持）
+  onShareTimeline() {
+    const teamName = this.postData ? (this.postData.teamName || '未命名队伍') : '未命名队伍'
+    const day = this.postData ? (this.postData.day || 1) : 1
+    const shareTitle = `【${teamName}】第${day}天打卡完成！一起来挑战七天打卡吧`
+    
+    // 分享朋友圈的图片必须是完整的 HTTPS URL
+    let shareImage = ''
+    if (this.postData) {
+      if (this.postData.images && this.postData.images.length > 0) {
+        shareImage = this.postData.images[0]
+      } else if (this.postData.photo) {
+        shareImage = this.postData.photo
+      }
+      
+      // 确保图片 URL 是完整的网络地址
+      if (shareImage && !shareImage.startsWith('http://') && !shareImage.startsWith('https://')) {
+        shareImage = ''
+      }
+    }
+    
+    return {
+      title: shareTitle,
+      query: this.postId ? `id=${this.postId}` : '',
+      imageUrl: shareImage // 必须是完整 HTTPS URL
     }
   },
   methods: {
@@ -211,25 +314,47 @@ export default {
             }
             
             // 处理评论数据：将后端格式转换为前端格式
-            const formattedComments = (result.comments || []).map(comment => ({
-              id: comment.commentId || comment.id,
-              commentId: comment.commentId || comment.id,
-              content: comment.content || '',
-              userName: comment.username || comment.userName || '匿名用户',
-              userId: comment.userId || null,
-              avatar: comment.avatar || '/static/square/user-icon.png',
-              createdAt: comment.createTime ? new Date(comment.createTime).getTime() : Date.now(),
-              createTime: comment.createTime || null
-            }))
+            const formattedComments = (result.comments || []).map(comment => {
+              // 处理评论头像
+              let commentAvatar = comment.avatar || '/static/square/user-icon.png'
+              if (commentAvatar && !commentAvatar.includes('default.jpg') && !commentAvatar.startsWith('/static/')) {
+                commentAvatar = processAvatarUrl(commentAvatar)
+                if (commentAvatar.includes('default.jpg')) {
+                  commentAvatar = '/static/square/user-icon.png'
+                }
+              } else if (commentAvatar.includes('default.jpg')) {
+                commentAvatar = '/static/square/user-icon.png'
+              }
+              
+              return {
+                id: comment.commentId || comment.id,
+                commentId: comment.commentId || comment.id,
+                content: comment.content || '',
+                userName: comment.username || comment.userName || '匿名用户',
+                userId: comment.userId || null,
+                avatar: commentAvatar,
+                createdAt: comment.createTime ? new Date(comment.createTime).getTime() : Date.now(),
+                createTime: comment.createTime || null
+              }
+            })
             
             // 处理点赞用户列表：获取前两个用户的头像用于显示
             const likeUsers = result.likeUsers || []
-            const avatar1 = likeUsers.length > 0 && likeUsers[0].avatar 
-              ? likeUsers[0].avatar 
-              : '/static/square/user-icon.png'
-            const avatar2 = likeUsers.length > 1 && likeUsers[1].avatar 
-              ? likeUsers[1].avatar 
-              : '/static/square/user-icon.png'
+            let avatar1 = '/static/square/user-icon.png'
+            let avatar2 = '/static/square/user-icon.png'
+            
+            if (likeUsers.length > 0 && likeUsers[0].avatar) {
+              avatar1 = processAvatarUrl(likeUsers[0].avatar)
+              if (avatar1.includes('default.jpg')) {
+                avatar1 = '/static/square/user-icon.png'
+              }
+            }
+            if (likeUsers.length > 1 && likeUsers[1].avatar) {
+              avatar2 = processAvatarUrl(likeUsers[1].avatar)
+              if (avatar2.includes('default.jpg')) {
+                avatar2 = '/static/square/user-icon.png'
+              }
+            }
             
             postData = {
               id: result.postId || result.id,
@@ -243,7 +368,7 @@ export default {
               updatedAt: result.createTime ? new Date(result.createTime).getTime() : Date.now(),
               likeCount: result.likeCount || 0,
               commentCount: result.commentCount || 0,
-              viewCount: 0, // 后端暂未提供浏览量
+              viewCount: result.viewCount || 0, // 从后端获取浏览量
               isLiked: result.isLiked || false,
               comments: formattedComments,
               latestCommentTime: formattedComments.length > 0 
@@ -293,6 +418,16 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    getCommentAvatar(comment) {
+      if (!comment || !comment.avatar) {
+        return '/static/square/user-icon.png'
+      }
+      const processed = processAvatarUrl(comment.avatar)
+      if (processed.includes('default.jpg')) {
+        return '/static/square/user-icon.png'
+      }
+      return processed
     },
     incrementViewCount() {
       if (!this.postData) return
@@ -455,17 +590,8 @@ export default {
         current
       })
     },
-    sharePost() {
-      uni.showActionSheet({
-        itemList: ['分享给好友', '分享到朋友圈'],
-        success: (res) => {
-          uni.showToast({
-            title: res.tapIndex === 0 ? '分享给好友' : '分享到朋友圈',
-            icon: 'success'
-          })
-        }
-      })
-    },
+    // sharePost 方法已不再需要，因为使用了 button 的 open-type="share"
+    // 分享功能由 onShareAppMessage 生命周期函数处理
     goBack() {
       uni.navigateBack({
         fail: () => {
@@ -750,8 +876,7 @@ export default {
   gap: 12rpx;
 }
 
-.comment-button,
-.share-button {
+.comment-button {
   width: 120rpx; /* 60px * 2 */
   height: 80rpx; /* 40px * 2 */
   background: rgba(255, 255, 255, 0.8);
@@ -761,6 +886,40 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 8rpx;
+}
+
+/* 分享按钮样式 - button 组件需要特殊处理 */
+.share-button {
+  width: 120rpx !important; /* 60px * 2 */
+  height: 80rpx !important; /* 40px * 2 */
+  background: rgba(255, 255, 255, 0.8) !important;
+  border: 2rpx solid #E5E5E5 !important;
+  border-radius: 32rpx !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  line-height: 1 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  box-sizing: border-box !important;
+}
+
+.share-button::after {
+  border: none !important;
+  display: none !important;
+}
+
+.share-button .button-content {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  width: 100%;
+  height: 100%;
+}
+
+.button-hover {
+  opacity: 0.8;
 }
 
 .button-icon {

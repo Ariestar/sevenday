@@ -112,6 +112,7 @@
 import { submitCheckin, getCheckinTasks } from '@/services/checkin'
 import { uploadCheckinImage } from '@/services/upload'
 import { ACTIVITY_DAYS } from '@/utils/constants'
+import { getCurrentActivityDay, canCheckinDay } from '@/utils/date'
 
 const MAX_IMAGES = 9
 
@@ -147,12 +148,49 @@ export default {
     }
   },
   async onLoad(options) {
-    // 从参数获取天数（固定为当天）
+    // 获取当前活动天数
+    const todayDay = getCurrentActivityDay()
+    if (todayDay === null) {
+      uni.showModal({
+        title: '提示',
+        content: '活动未开始或已结束，无法打卡',
+        showCancel: false,
+        success: () => {
+          uni.navigateBack({
+            fail: () => uni.reLaunch({ url: '/pages/checkin-detail/index' })
+          })
+        }
+      })
+      return
+    }
+    
+    // 从参数获取天数，但验证必须是当天
     if (options && options.day) {
       const dayNum = Number(options.day)
       if (!Number.isNaN(dayNum) && dayNum >= 1 && dayNum <= 10) {
+        // 验证是否是当天
+        const checkResult = canCheckinDay(dayNum)
+        if (!checkResult.canCheckin) {
+          uni.showModal({
+            title: '提示',
+            content: checkResult.message,
+            showCancel: false,
+            success: () => {
+              uni.navigateBack({
+                fail: () => uni.reLaunch({ url: '/pages/checkin-detail/index' })
+              })
+            }
+          })
+          return
+        }
         this.currentDay = dayNum
+      } else {
+        // 如果参数无效，使用当天
+        this.currentDay = todayDay
       }
+    } else {
+      // 如果没有传入天数，使用当天
+      this.currentDay = todayDay
     }
     
     // 从参数获取任务ID（如果已选择）
@@ -290,6 +328,17 @@ export default {
 
       if (this.submitDisabled) {
         console.log('⚠️ 提交按钮被禁用')
+        return
+      }
+
+      // 验证是否是当天
+      const checkResult = canCheckinDay(this.currentDay)
+      if (!checkResult.canCheckin) {
+        uni.showToast({
+          title: checkResult.message,
+          icon: 'none',
+          duration: 2000
+        })
         return
       }
 

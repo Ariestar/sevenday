@@ -1,5 +1,14 @@
 <template>
   <view class="mine-page">
+    <!-- 顶部导航栏 -->
+    <view class="top-nav-bar">
+      <view class="nav-bar-content">
+        <view class="nav-left"></view>
+        <text class="nav-title">我的</text>
+        <view class="nav-right"></view>
+      </view>
+    </view>
+    
     <!-- 用户信息卡片 -->
     <view class="user-info-card">
       <view class="avatar-container" @click="handleAvatarClick">
@@ -25,13 +34,12 @@
       
       <!-- 已认证状态 -->
       <view v-else class="user-status-section">
-        <view class="user-welcome">
-          <text class="welcome-text">欢迎回来！</text>
-          <text class="user-name">{{ (userInfo && (userInfo.name || userInfo.username)) || '用户' }}</text>
-          <text v-if="!userInfo || (!userInfo.name && !userInfo.username)" class="user-hint">点击下方"个人信息"完善资料</text>
+        <view class="auth-prompt">
+          <text class="auth-title">{{ displayName }}</text>
+          <text class="auth-subtitle">已登录/认证</text>
         </view>
-        <view class="user-badge">
-          <text class="badge-text">已认证</text>
+        <view class="auth-btn" style="opacity: 0.8;">
+          <text class="auth-btn-text">已认证</text>
         </view>
       </view>
     </view>
@@ -91,6 +99,7 @@
 <script>
 import { getUserInfo } from '../../services/auth'
 import { uploadAvatar } from '../../services/upload'
+import { getTeamInfo } from '../../services/match'
 import authUtils from '../../utils/auth'
 import CustomTabBar from '../../components/CustomTabBar.vue'
 import LoginModal from '../../components/LoginModal.vue'
@@ -103,22 +112,30 @@ export default {
   data() {
     return {
       userInfo: {},
-      loginModalVisible: false
+      loginModalVisible: false,
+      authToken: null // 添加响应式的 token 追踪
     }
   },
   computed: {
     isAuthenticated() {
       // 检查是否有token，只要有token就认为已认证
+      // 使用响应式的 authToken 或直接从存储读取
       try {
-        if (!authUtils || !authUtils.getToken) {
-          return false
-        }
-        const token = authUtils.getToken()
+        const token = this.authToken || (authUtils && authUtils.getToken ? authUtils.getToken() : null)
         return !!token
       } catch (e) {
         console.error('获取token失败:', e)
         return false
       }
+    },
+    displayName() {
+      // 优先显示实际设置的名字
+      if (!this.userInfo) {
+        return '用户'
+      }
+      // 优先使用 name，如果没有则使用 username
+      // 如果都没有，显示"用户"
+      return this.userInfo.name || this.userInfo.username || '用户'
     }
   },
   onLoad() {
@@ -142,11 +159,15 @@ export default {
       if (!authUtils) {
         console.error('authUtils 未定义')
         this.userInfo = {}
+        this.authToken = null
         return
       }
       
       const localUserInfo = authUtils.getUserInfo ? authUtils.getUserInfo() : null
       const token = authUtils.getToken ? authUtils.getToken() : null
+      
+      // 更新响应式的 token，确保 isAuthenticated 计算属性能正确响应
+      this.authToken = token
       
       if (token) {
         // 有token说明已登录，显示用户信息（如果有的话）
@@ -164,15 +185,47 @@ export default {
       } else {
         // 没有token说明未登录，清空用户信息，显示未认证状态
         this.userInfo = {}
+        this.authToken = null
       }
     } catch (e) {
       console.error('mine页面 onShow 错误:', e)
       this.userInfo = {}
+      this.authToken = null
     }
   },
   onUnload() {
     // 移除事件监听
     uni.$off('user-logout', this.handleUserLogout)
+  },
+  // 分享给好友功能
+  onShareAppMessage(res) {
+    // 如果是从分享按钮触发的
+    if (res.from === 'button') {
+      console.log('📤 分享按钮被点击', res.target)
+    }
+    
+    // 构建分享内容
+    const shareTitle = `专交遇见你 - 七天打卡活动，一起来挑战！`
+    const sharePath = '/pages/square/index'
+    
+    console.log('📤 分享应用:', {
+      title: shareTitle,
+      path: sharePath
+    })
+    
+    return {
+      title: shareTitle,
+      path: sharePath,
+      imageUrl: '' // 使用默认图片
+    }
+  },
+  // 分享到朋友圈功能（仅微信小程序支持）
+  onShareTimeline() {
+    return {
+      title: '专交遇见你 - 七天打卡活动，一起来挑战！',
+      query: '',
+      imageUrl: ''
+    }
   },
   methods: {
     initUserInfo() {
@@ -181,10 +234,14 @@ export default {
         if (!authUtils) {
           console.error('authUtils 未定义')
           this.userInfo = {}
+          this.authToken = null
           return
         }
         const localUserInfo = authUtils.getUserInfo ? authUtils.getUserInfo() : null
         const token = authUtils.getToken ? authUtils.getToken() : null
+        
+        // 更新响应式的 token
+        this.authToken = token
         
         if (token) {
           // 有token说明已登录
@@ -196,6 +253,7 @@ export default {
       } catch (e) {
         console.error('初始化用户信息失败:', e)
         this.userInfo = {}
+        this.authToken = null
       }
     },
     async loadUserInfo(forceRefresh = false) {
@@ -214,10 +272,20 @@ export default {
         if (token) {
           try {
             const info = await getUserInfo()
-            this.userInfo = info || {}
-            // 保存到本地存储
             if (info) {
+              // 统一处理用户信息，确保 name 字段正确映射
+              // 后端返回的是 username，但前端统一使用 name 字段
+              this.userInfo = {
+                ...info,
+                // 如果后端返回 username，也映射到 name 字段（如果 name 不存在）
+                name: info.name || info.username || '',
+                // 保留 username 字段以便兼容
+                username: info.username || info.name || ''
+              }
+              // 保存到本地存储
               authUtils.setUserInfo(this.userInfo)
+            } else {
+              this.userInfo = {}
             }
           } catch (err) {
             console.error('加载用户信息失败:', err)
@@ -225,6 +293,7 @@ export default {
             authUtils.logout()
             // 清空用户信息
             this.userInfo = {}
+            this.authToken = null // 清除响应式的 token
             // 触发用户登出事件
             uni.$emit('user-logout')
           }
@@ -253,6 +322,25 @@ export default {
     },
     
     async handleLoginSuccess(userInfo) {
+      console.log('handleLoginSuccess 被调用，userInfo:', userInfo)
+      
+      // 验证 token 是否已保存
+      const token = authUtils.getToken()
+      console.log('登录后检查 token:', token ? '已保存' : '未保存')
+      
+      if (!token) {
+        console.error('登录后 token 未保存，尝试重新获取')
+        // 如果 token 未保存，可能是登录流程有问题
+        uni.showToast({
+          title: '登录状态异常，请重新登录',
+          icon: 'none'
+        })
+        return
+      }
+      
+      // 更新响应式的 token，确保 isAuthenticated 计算属性能立即响应
+      this.authToken = token
+      
       // 登录成功后，更新本地用户信息（即使为空对象也可以）
       // 保存登录返回的用户信息到本地（可能是空对象，但token已保存）
       if (userInfo) {
@@ -267,23 +355,119 @@ export default {
       // 关闭登录弹窗
       this.loginModalVisible = false
       
-      // 尝试从服务器获取完整的用户信息（如果服务器有的话）
-      try {
-        const token = authUtils.getToken()
-        if (token) {
-          const info = await getUserInfo()
-          if (info) {
-            this.userInfo = info
-            authUtils.setUserInfo(info)
-          }
+      // 强制触发响应式更新，确保 isAuthenticated 计算属性重新计算
+      this.$nextTick(async () => {
+        // 尝试从服务器获取完整的用户信息（如果服务器有的话）
+        try {
+          await this.loadUserInfo(true)
+          console.log('登录后用户信息已更新')
+        } catch (err) {
+          // 获取用户信息失败不影响登录状态，token已经保存
+          console.log('获取用户信息失败（可能用户信息为空），但不影响登录状态:', err)
         }
-      } catch (err) {
-        // 获取用户信息失败不影响登录状态，token已经保存
-        console.log('获取用户信息失败（可能用户信息为空），但不影响登录状态:', err)
-      }
-      
-      // 登录成功，不再强制跳转到个人信息页面
-      // 用户可以在"我的"页面看到已认证状态，也可以随时点击"个人信息"去填写
+        
+        // 检查组队状态并跳转（登录后必须从API获取最新状态）
+        try {
+          console.log('🔍 登录成功后检查组队状态...')
+          
+          // 先检查本地存储（快速判断）
+          const localHasTeam = uni.getStorageSync('hasTeam')
+          let hasTeam = false
+          
+          // 登录后，无论本地是否有，都从API获取最新状态（确保准确性）
+          try {
+            console.log('📡 从API获取最新的组队状态...')
+            const teamRes = await getTeamInfo()
+            console.log('📡 组队状态API返回:', teamRes)
+            
+            if (teamRes && teamRes.team) {
+              hasTeam = true
+              uni.setStorageSync('hasTeam', true)
+              if (teamRes.team.name) {
+                uni.setStorageSync('teamName', teamRes.team.name)
+              }
+              console.log('✅ 已组队，队伍信息:', teamRes.team)
+            } else {
+              hasTeam = false
+              uni.removeStorageSync('hasTeam')
+              uni.removeStorageSync('teamName')
+              console.log('❌ 未组队')
+            }
+          } catch (err) {
+            console.warn('⚠️ 从API获取组队状态失败，使用本地存储:', err)
+            // 如果API调用失败，使用本地存储的值作为fallback
+            hasTeam = !!localHasTeam
+          }
+          
+          // 根据组队状态跳转
+          if (hasTeam) {
+            // 已组队，直接跳转到打卡页面
+            console.log('✅ 已组队，跳转到打卡页面')
+            setTimeout(() => {
+              uni.switchTab({
+                url: '/pages/checkin-detail/index',
+                success: () => {
+                  console.log('✅ 跳转到打卡页面成功')
+                },
+                fail: (err) => {
+                  console.warn('⚠️ switchTab失败，尝试reLaunch:', err)
+                  uni.reLaunch({
+                    url: '/pages/checkin-detail/index',
+                    success: () => {
+                      console.log('✅ reLaunch到打卡页面成功')
+                    }
+                  })
+                }
+              })
+            }, 300)
+          } else {
+            // 未组队，跳转到报名-匹配页面
+            console.log('❌ 未组队，跳转到报名-匹配页面')
+            setTimeout(() => {
+              // 跳转到匹配页面（如果用户已经报名过会显示匹配界面，否则会提示报名）
+              uni.switchTab({
+                url: '/pages/multiple-match/index',
+                success: () => {
+                  console.log('✅ 跳转到报名-匹配页面成功')
+                },
+                fail: (err) => {
+                  console.warn('⚠️ switchTab失败，尝试reLaunch:', err)
+                  uni.reLaunch({
+                    url: '/pages/multiple-match/index',
+                    success: () => {
+                      console.log('✅ reLaunch到报名-匹配页面成功')
+                    }
+                  })
+                }
+              })
+            }, 300)
+          }
+        } catch (err) {
+          console.error('❌ 检查组队状态或跳转失败:', err)
+          // 如果检查失败，默认跳转到匹配页面（未组队状态）
+          setTimeout(() => {
+            uni.switchTab({
+              url: '/pages/multiple-match/index',
+              fail: () => {
+                uni.reLaunch({
+                  url: '/pages/multiple-match/index'
+                })
+              }
+            })
+          }, 300)
+          // 如果检查失败，默认跳转到报名-匹配页面
+          setTimeout(() => {
+            uni.switchTab({
+              url: '/pages/multiple-match/index',
+              fail: () => {
+                uni.reLaunch({
+                  url: '/pages/multiple-match/index'
+                })
+              }
+            })
+          }, 500)
+        }
+      })
     },
     
     handleAvatarClick() {
@@ -346,6 +530,7 @@ export default {
     handleUserLogout() {
       // 处理用户登出事件
       this.userInfo = {}
+      this.authToken = null // 清除响应式的 token
       console.log('用户已登出，清除本地状态')
     },
     
@@ -366,12 +551,38 @@ export default {
             uni.showToast({
               title: '已退出登录',
               icon: 'success',
-              duration: 2000
+              duration: 1500
             })
-            // 延迟刷新页面状态
+            // 延迟刷新页面，确保数据已清除
             setTimeout(() => {
-              this.loadUserInfo()
-            }, 500)
+              // 重新加载当前页面，触发所有生命周期，刷新页面状态
+              const pages = getCurrentPages()
+              if (pages.length > 0) {
+                const currentPage = pages[pages.length - 1]
+                const route = currentPage.route
+                // 使用 reLaunch 重新加载当前页面
+                uni.reLaunch({
+                  url: '/' + route,
+                  success: () => {
+                    console.log('页面已刷新')
+                  },
+                  fail: (err) => {
+                    console.warn('刷新页面失败，尝试使用 switchTab:', err)
+                    // 如果是 tabBar 页面，使用 switchTab
+                    uni.switchTab({
+                      url: '/' + route,
+                      fail: () => {
+                        // 如果都失败，至少重新加载数据
+                        this.loadUserInfo()
+                      }
+                    })
+                  }
+                })
+              } else {
+                // 如果无法获取当前页面，至少重新加载数据
+                this.loadUserInfo()
+              }
+            }, 1500)
           }
         }
       })
@@ -382,9 +593,45 @@ export default {
 
 <style scoped>
 .mine-page {
+  height: 100vh;
+  box-sizing: border-box;
   min-height: 100vh;
   background: linear-gradient(180deg, #F7E8FE 0%, #FFFEFF 100%);
-  padding: 40rpx 32rpx 146rpx; /* 为 TabBar 留出空间 */
+  padding: calc(env(safe-area-inset-top) + 100rpx) 32rpx 146rpx; /* 为导航栏留出空间，为 TabBar 留出空间 */
+}
+
+/* 顶部导航栏 */
+.top-nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #FFFFFF;
+  padding-top: env(safe-area-inset-top);
+  z-index: 1000;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.nav-bar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 32rpx;
+  height: 80rpx;
+}
+
+.nav-left {
+  width: 80rpx;
+}
+
+.nav-title {
+  font-size: 32rpx;
+  color: #333333;
+  font-weight: 500;
+}
+
+.nav-right {
+  width: 80rpx;
 }
 
 /* 用户信息卡片 */
@@ -481,44 +728,7 @@ export default {
   color: #FFFFFF;
 }
 
-/* 已认证状态 */
-.user-welcome {
-  display: flex;
-  flex-direction: column;
-}
-
-.welcome-text {
-  font-size: 28rpx;
-  color: #666666;
-  line-height: 34rpx;
-  margin-bottom: 8rpx;
-}
-
-.user-name {
-  font-size: 36rpx;
-  font-weight: 600;
-  color: #333333;
-  line-height: 44rpx;
-  margin-bottom: 8rpx;
-}
-
-.user-hint {
-  font-size: 24rpx;
-  color: #999999;
-  line-height: 30rpx;
-}
-
-.user-badge {
-  background: linear-gradient(90deg, #A100FE 0%, #FDB9E7 100%);
-  border-radius: 20rpx;
-  padding: 8rpx 16rpx;
-}
-
-.badge-text {
-  font-size: 24rpx;
-  color: #FFFFFF;
-  line-height: 30rpx;
-}
+/* 已认证状态 - 使用与未认证状态相同的样式 */
 
 /* 功能菜单卡片 */
 .function-menu-card {

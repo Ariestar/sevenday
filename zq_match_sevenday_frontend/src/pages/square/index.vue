@@ -1,5 +1,14 @@
 <template>
   <view class="square-page">
+    <!-- 顶部导航栏 -->
+    <view class="top-nav-bar">
+      <view class="nav-bar-content">
+        <view class="nav-left"></view>
+        <text class="nav-title">广场</text>
+        <view class="nav-right"></view>
+      </view>
+    </view>
+    
     <!-- 顶部标题区 -->
     <view class="page-header">
       <view class="header-content">
@@ -177,6 +186,36 @@ export default {
   },
   onPullDownRefresh() {
     this.refreshData()
+  },
+  // 分享给好友功能
+  onShareAppMessage(res) {
+    // 如果是从分享按钮触发的
+    if (res.from === 'button') {
+      console.log('📤 分享按钮被点击', res.target)
+    }
+    
+    // 构建分享内容
+    const shareTitle = `专交遇见你 - 七天打卡活动广场，看看大家的打卡动态！`
+    const sharePath = '/pages/square/index'
+    
+    console.log('📤 分享广场页面:', {
+      title: shareTitle,
+      path: sharePath
+    })
+    
+    return {
+      title: shareTitle,
+      path: sharePath,
+      imageUrl: '' // 使用默认图片
+    }
+  },
+  // 分享到朋友圈功能（仅微信小程序支持）
+  onShareTimeline() {
+    return {
+      title: '专交遇见你 - 七天打卡活动广场，看看大家的打卡动态！',
+      query: '',
+      imageUrl: ''
+    }
   },
   methods: {
     async refreshData() {
@@ -367,11 +406,46 @@ export default {
   padding-bottom: 120rpx; /* 为 TabBar 留出空间 */
 }
 
-/* 顶部标题区 - 调整间距 */
+/* 顶部导航栏 */
+.top-nav-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: #FFFFFF;
+  padding-top: env(safe-area-inset-top);
+  z-index: 1000;
+  border-bottom: 1rpx solid #F0F0F0;
+}
+
+.nav-bar-content {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20rpx 32rpx;
+  height: 80rpx;
+}
+
+.nav-left {
+  width: 80rpx;
+}
+
+.nav-title {
+  font-size: 32rpx;
+  color: #333333;
+  font-weight: 500;
+}
+
+.nav-right {
+  width: 80rpx;
+}
+
+/* 顶部标题区 */
 .page-header {
   position: relative;
   width: 100%;
   padding: 40rpx 20rpx 60rpx;
+  padding-top: calc(env(safe-area-inset-top) + 100rpx + 40rpx); /* 为导航栏留出空间 */
   background: #FDF8FF;
   display: flex;
   flex-direction: column;
@@ -501,8 +575,7 @@ export default {
 /* 打卡列表 */
 .post-list {
   flex: 1;
-  padding: 20rpx 20rpx 0; 
-  margin-top: 20rpx; /* 给头部留出空间 */
+  padding: 20rpx 20rpx 0;
 }
 
 .post-card {

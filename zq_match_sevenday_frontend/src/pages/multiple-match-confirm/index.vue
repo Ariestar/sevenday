@@ -101,7 +101,6 @@
 
     <!-- 设置队名弹窗（优先级更高，先显示） -->
     <TeamNameModal
-      v-if="showTeamNameModal"
       :visible="showTeamNameModal"
       :defaultTeamName="currentTeamName"
       @cancel="handleTeamNameCancel"
@@ -407,6 +406,9 @@ export default {
           uni.setStorageSync('hasTeam', true)
           uni.setStorageSync('justCreatedTeam', true)
           
+          // 触发 TabBar 更新
+          uni.$emit('tabbar-update')
+          
           // 保存队友信息到本地存储
           const teamData = result?.data?.team || result?.team
           if (teamData) {
@@ -497,29 +499,29 @@ export default {
             result: result
           })
           
-          // 无论后端是否返回队名，都先显示设置队名弹窗
-          // 如果后端已返回队名，可以作为默认值预填充
+          // 如果后端已返回队名，说明队友已经设置了队名，直接显示组队成功弹窗
           if (teamNameFromAPI && teamNameFromAPI.trim()) {
-            // 如果后端已设置队名，保存为当前队名（但还是要显示设置弹窗让用户确认或修改）
+            // 如果后端已设置队名，保存为当前队名，直接显示组队成功弹窗
             this.currentTeamName = teamNameFromAPI
-            // 注意：这里不保存到本地存储，等用户确认后再保存
+            uni.setStorageSync('teamName', teamNameFromAPI)
+            // 不显示设置队名弹窗，直接显示组队成功弹窗
+            this.showTeamNameModal = false
+            this.showTeamCreatedModal = true
+            console.log('✅ 队名已存在，直接显示组队成功弹窗，队名:', teamNameFromAPI)
           } else {
-            // 如果后端未设置队名，清空
+            // 如果后端未设置队名，显示设置队名弹窗让用户创建队名
             this.currentTeamName = ''
+            this.showTeamCreatedModal = false
+            // 显示设置队名弹窗
+            console.log('📝 显示设置队名弹窗')
+            this.showTeamNameModal = true
+            console.log('📝 showTeamNameModal 设置为:', this.showTeamNameModal)
+            
+            // 使用 nextTick 确保 DOM 更新
+            this.$nextTick(() => {
+              console.log('📝 nextTick 后 showTeamNameModal:', this.showTeamNameModal)
+            })
           }
-          
-          // 确保组队成功弹窗是关闭的
-          this.showTeamCreatedModal = false
-          
-          // 始终显示设置队名弹窗
-          console.log('📝 显示设置队名弹窗')
-          this.showTeamNameModal = true
-          console.log('📝 showTeamNameModal 设置为:', this.showTeamNameModal)
-          
-          // 使用 nextTick 确保 DOM 更新
-          this.$nextTick(() => {
-            console.log('📝 nextTick 后 showTeamNameModal:', this.showTeamNameModal)
-          })
         } else {
           // 拒绝邀请
           await confirmMatch({
@@ -567,6 +569,9 @@ export default {
           if (agreed) {
             uni.setStorageSync('hasTeam', true)
             uni.setStorageSync('justCreatedTeam', true)
+            
+            // 触发 TabBar 更新
+            uni.$emit('tabbar-update')
             // 不设置默认队名，让用户有机会创建队名
             this.currentTeamName = ''
             uni.removeStorageSync('teamName')
@@ -615,13 +620,16 @@ export default {
         uni.showLoading({ title: '保存中...' })
         
         // 调用后端API保存队名
-        await setTeamName(teamName)
+        const result = await setTeamName(teamName)
         
         uni.hideLoading()
         
+        // 从后端返回结果中获取队名（确保使用最新的队名）
+        const savedTeamName = result?.data?.name || result?.name || teamName
+        
         // 保存成功，更新本地存储和当前队名
-        this.currentTeamName = teamName
-        uni.setStorageSync('teamName', teamName)
+        this.currentTeamName = savedTeamName
+        uni.setStorageSync('teamName', savedTeamName)
         
         // 关闭设置队名弹窗
         this.showTeamNameModal = false
@@ -632,15 +640,32 @@ export default {
         uni.hideLoading()
         console.error('保存队名失败:', error)
         
-        // 如果是因为队名已设置而失败，直接使用已有队名
+        // 如果是因为队名已设置而失败，需要获取已有的队名
         if (error.message?.includes('已设置') || error.message?.includes('already')) {
           uni.showToast({
             title: '队名已设置，不可修改',
             icon: 'none'
           })
           this.showTeamNameModal = false
-          // 重新获取队名
-          const savedTeamName = uni.getStorageSync('teamName')
+          
+          // 尝试从本地存储获取队名
+          let savedTeamName = uni.getStorageSync('teamName')
+          
+          // 如果本地存储没有，尝试从后端获取队伍信息
+          if (!savedTeamName) {
+            try {
+              const { getTeamInfo } = await import('../../services/match')
+              const teamResult = await getTeamInfo()
+              const teamInfo = teamResult?.data || teamResult
+              savedTeamName = teamInfo?.name || ''
+              if (savedTeamName) {
+                uni.setStorageSync('teamName', savedTeamName)
+              }
+            } catch (err) {
+              console.error('获取队伍信息失败:', err)
+            }
+          }
+          
           if (savedTeamName) {
             this.currentTeamName = savedTeamName
             this.showTeamCreatedModal = true

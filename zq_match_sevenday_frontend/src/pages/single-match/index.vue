@@ -8,12 +8,12 @@
       <!-- 标签切换区域 -->
       <view class="tab-section">
         <view class="tab-group">
-          <view class="tab-item" @click="goToSignup">
+          <view class="tab-item" @click="goToSignup" v-if="!hasTeam">
             <text class="tab-text">报名</text>
           </view>
           <view class="tab-item active">
             <text class="tab-text active">匹配</text>
-            <view class="tab-indicator"></view>
+            <view class="tab-indicator" v-if="!hasTeam"></view>
           </view>
         </view>
       </view>
@@ -166,7 +166,7 @@
 
 <script>
 import { GENDER_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
-import { saveMatchExpectation, getMatchExpectation, recommendMatches, autoMatch } from '../../services/match'
+import { saveMatchExpectation, getMatchExpectation, recommendMatches, autoMatch, getTeamInfo } from '../../services/match'
 import { getAcademies } from '../../services/academies'
 import SuccessModal from '../../components/SuccessModal.vue'
 
@@ -188,7 +188,8 @@ export default {
       showSuccessModal: false,
       successType: 'save',
       successTitle: '保存成功！',
-      saving: false
+      saving: false,
+      hasTeam: false
     }
   },
   computed: {
@@ -213,6 +214,11 @@ export default {
     }
     this.loadAcademies()
     this.loadMatchExpectation()
+    this.checkTeamStatus()
+  },
+  onShow() {
+    // 每次显示页面时检查组队状态
+    this.checkTeamStatus()
   },
   methods: {
     onGenderChange(e) {
@@ -682,6 +688,27 @@ export default {
           uni.reLaunch({ url: '/pages/mine/index' })
         }
       })
+    },
+    async checkTeamStatus() {
+      try {
+        // 先检查本地存储
+        const localHasTeam = uni.getStorageSync('hasTeam')
+        if (localHasTeam) {
+          this.hasTeam = true
+        }
+        
+        // 再通过API确认
+        const res = await getTeamInfo()
+        if (res && res.team) {
+          this.hasTeam = true
+          uni.setStorageSync('hasTeam', true)
+        } else {
+          this.hasTeam = false
+          uni.removeStorageSync('hasTeam')
+        }
+      } catch (err) {
+        console.error('检查队伍状态失败:', err)
+      }
     }
   }
 }

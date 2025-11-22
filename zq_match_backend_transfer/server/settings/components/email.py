@@ -3,7 +3,7 @@
 """
 from server.settings.util import config
 
-# 邮件后端配置
+# 邮件后端配置 - 使用 Django 标准 SMTP 后端
 EMAIL_BACKEND = config(
     "EMAIL_BACKEND",
     "django.core.mail.backends.smtp.EmailBackend"

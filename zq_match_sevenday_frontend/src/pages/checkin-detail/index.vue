@@ -13,7 +13,7 @@
       @confirm="handleTeamCreatedConfirm"
     />
 
-    <view v-if="hasTeam" class="checkin-content">
+    <view v-if="!isCheckingTeam && hasTeam" class="checkin-content">
       <!-- 顶部背景区域 -->
       <view class="header-background">
         <view class="banner-background"></view>
@@ -53,36 +53,25 @@
               <view 
                 v-for="(task, index) in allTasks" 
                 :key="task.taskId || index"
-                class="task-circle"
-                :class="{ 
-                  selected: selectedTaskId === task.taskId,
-                  completed: isTaskCompleted(task.taskId)
-                }"
+                class="task-item"
                 @click="selectTask(task)"
               >
-                <text class="circle-number">{{ index + 1 }}</text>
-                <text class="circle-score">{{ getScoreDisplay(task.score) }}</text>
-              </view>
-            </view>
-          </scroll-view>
-          <view class="task-labels-scroll">
-            <scroll-view 
-              class="task-labels-scroll-view" 
-              scroll-x 
-              :scroll-left="taskScrollLeft"
-              :show-scrollbar="false"
-            >
-              <view class="task-labels-container">
-                <text 
-                  v-for="(task, index) in allTasks" 
-                  :key="task.taskId || index" 
-                  class="task-label"
+                <view 
+                  class="task-circle"
+                  :class="{ 
+                    selected: selectedTaskId === task.taskId,
+                    completed: isTaskCompleted(task.taskId)
+                  }"
                 >
+                  <text class="circle-number">{{ index + 1 }}</text>
+                  <text class="circle-score">{{ getScoreDisplay(task.score) }}</text>
+                </view>
+                <text class="task-label">
                   {{ getTaskShortName(task.title || task.name) }}
                 </text>
               </view>
-            </scroll-view>
-          </view>
+            </view>
+          </scroll-view>
         </view>
 
         <!-- 当前选中任务的名称和说明 -->
@@ -99,7 +88,7 @@
               v-for="day in 10" 
               :key="day"
               class="task-row"
-              :class="[`status-${getDayStatus(selectedTask.taskId, day)}`]"
+              :class="[`status-${getDayStatus(selectedTask.taskId, day)}`, { disabled: !isToday(day) && !isDayCompleted(selectedTask.taskId, day) }]"
               @click="goToCheckinForDay(day)"
             >
               <view class="task-row-left">
@@ -125,7 +114,14 @@
         </view>
       </view>
     </view>
-    <NoTeamState v-else />
+    <NoTeamState v-else-if="!isCheckingTeam && !hasTeam" />
+    
+    <!-- 加载状态 -->
+    <view v-if="isCheckingTeam" class="loading-container">
+      <view class="loading-content">
+        <text class="loading-text">加载中...</text>
+      </view>
+    </view>
 
     <!-- 底部导航栏 -->
     <CustomTabBar :current="1"></CustomTabBar>
@@ -139,6 +135,7 @@ import TeamCreatedModal from '@/components/TeamCreatedModal.vue'
 import NoTeamState from '@/components/NoTeamState.vue'
 import { getMatchList, setTeamName } from '../../services/match'
 import { getCheckinTasks, getMyCheckinList } from '../../services/checkin'
+import { getCurrentActivityDay, canCheckinDay, isToday as isTodayUtil } from '../../utils/date'
 
 export default {
   components: {
@@ -168,6 +165,7 @@ export default {
       },
       taskScrollLeft: 0, // 任务滚动位置
       hasTeam: false,
+      isCheckingTeam: true, // 是否正在检查队伍状态
       justCreatedTeam: false,
       currentTeamName: '',
       showTeamNameModal: false,
@@ -184,10 +182,36 @@ export default {
       return progress ? progress.completedDays.length : 0
     },
     currentDayCompletedTasks() {
-      // 获取当前天数已完成的任务数
-      const currentDay = this.dailyTaskProgress.currentDay
-      const dayKey = `day${currentDay}`
-      return this.dailyTaskProgress[dayKey] || 0
+      // 获取当天已完成的任务数（基于实际日期）
+      const todayDay = getCurrentActivityDay()
+      let dayToShow = todayDay
+      
+      // 如果活动未开始或已结束，使用当前进行到的天数（基于打卡记录）
+      if (todayDay === null) {
+        dayToShow = this.dailyTaskProgress.currentDay || 1
+      }
+      
+      // 确保dayToShow在有效范围内
+      if (dayToShow < 1 || dayToShow > 10) {
+        dayToShow = 1
+      }
+      
+      const dayKey = `day${dayToShow}`
+      const completed = this.dailyTaskProgress[dayKey] || 0
+      
+      // 调试信息（仅在开发时输出）
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📊 进度计算:`, {
+          todayDay,
+          currentDay: this.dailyTaskProgress.currentDay,
+          dayToShow,
+          dayKey,
+          completed,
+          dailyTaskProgress: this.dailyTaskProgress
+        })
+      }
+      
+      return completed
     },
     dailyTaskProgressWidth() {
       // 显示当前天数已完成任务数占总任务数的比例
@@ -220,14 +244,6 @@ export default {
     if (this.hasTeam && !this.showTeamNameModal) {
       await this.loadCheckinData()
     }
-    // 触发TabBar更新，确保选中状态正确
-    uni.$emit('tabbar-update')
-  },
-  onLoad() {
-    // 首次加载时检查队伍状态（会处理新创建队伍的弹窗）
-    this.checkTeamStatus()
-    // 监听打卡更新事件
-    uni.$on('checkin-updated', this.handleCheckinUpdate)
   },
   async onPullDownRefresh() {
     // 下拉刷新：重新加载所有数据
@@ -241,6 +257,53 @@ export default {
   onUnload() {
     // 移除事件监听
     uni.$off('checkin-updated', this.handleCheckinUpdate)
+  },
+  // 分享给好友功能
+  onShareAppMessage(res) {
+    // 如果是从分享按钮触发的
+    if (res.from === 'button') {
+      console.log('📤 分享按钮被点击', res.target)
+    }
+    
+    // 构建分享内容
+    const teamName = uni.getStorageSync('teamName') || '未命名队伍'
+    const totalTasks = this.allTasks.length || 20
+    const completedTasks = Object.values(this.dailyTaskProgress).reduce((sum, count) => {
+      return typeof count === 'number' ? sum + count : sum
+    }, 0)
+    const totalRequiredTasks = totalTasks * 10 // 10天 * 任务数
+    const progressPercent = totalRequiredTasks > 0 ? Math.round((completedTasks / totalRequiredTasks) * 100) : 0
+    
+    // 优化分享标题，显示进度百分比
+    const shareTitle = `【${teamName}】组队打卡进行中！已完成 ${completedTasks}/${totalRequiredTasks} 个任务（进度 ${progressPercent}%），一起来挑战吧！- 专交遇见你`
+    
+    const sharePath = '/pages/checkin-detail/index'
+    
+    console.log('📤 分享组队打卡进度:', {
+      title: shareTitle,
+      path: sharePath,
+      progress: `${completedTasks}/${totalRequiredTasks} (${progressPercent}%)`
+    })
+    
+    return {
+      title: shareTitle,
+      path: sharePath,
+      imageUrl: '' // 使用默认图片
+    }
+  },
+  // 分享到朋友圈功能（仅微信小程序支持）
+  onShareTimeline() {
+    const teamName = uni.getStorageSync('teamName') || '未命名队伍'
+    const totalTasks = this.allTasks.length || 20
+    const completedTasks = Object.values(this.dailyTaskProgress).reduce((sum, count) => {
+      return typeof count === 'number' ? sum + count : sum
+    }, 0)
+    
+    return {
+      title: `【${teamName}】组队打卡进行中！已完成 ${completedTasks}/${totalTasks * 10} 个任务`,
+      query: '',
+      imageUrl: ''
+    }
   },
   methods: {
     goToTeammateInfo() {
@@ -269,18 +332,18 @@ export default {
         return
       }
       
-      // 天数固定为当天（当前进行到第几天）
-      const currentDay = this.dailyTaskProgress.currentDay
-      if (!currentDay || currentDay < 1 || currentDay > 10) {
+      // 获取当前活动天数（基于实际日期）
+      const todayDay = getCurrentActivityDay()
+      if (todayDay === null) {
         uni.showToast({
-          title: '无法确定当前天数',
+          title: '活动未开始或已结束',
           icon: 'none'
         })
         return
       }
       
       // 检查该任务当天是否已完成
-      if (this.isDayCompleted(this.selectedTask.taskId, currentDay)) {
+      if (this.isDayCompleted(this.selectedTask.taskId, todayDay)) {
         uni.showToast({
           title: '该任务今天已完成打卡',
           icon: 'none'
@@ -290,7 +353,7 @@ export default {
       
       // 跳转到打卡提交页面，传递任务ID和当天天数
       uni.navigateTo({
-        url: `/pages/checkin-submit/index?taskId=${this.selectedTask.taskId}&day=${currentDay}`
+        url: `/pages/checkin-submit/index?taskId=${this.selectedTask.taskId}&day=${todayDay}`
       })
     },
 
@@ -300,12 +363,21 @@ export default {
     },
 
     async checkTeamStatus() {
-      // 先从本地存储读取，快速显示
+      // 先从本地存储读取，快速显示（但只在本地存储有值时才立即显示）
       const hasTeamFromStorage = uni.getStorageSync('hasTeam')
       const teamName = uni.getStorageSync('teamName')
       const justCreatedTeam = uni.getStorageSync('justCreatedTeam')
 
-      this.hasTeam = !!hasTeamFromStorage
+      // 如果本地存储有值，先使用本地存储的值（快速显示）
+      // 如果本地存储没有值，等待API返回后再显示
+      if (hasTeamFromStorage !== null && hasTeamFromStorage !== undefined && hasTeamFromStorage !== '') {
+        this.hasTeam = !!hasTeamFromStorage
+        this.isCheckingTeam = false // 本地存储有值，可以先显示
+      } else {
+        // 本地存储没有值，等待API返回
+        this.isCheckingTeam = true
+      }
+      
       this.currentTeamName = teamName || ''
       this.justCreatedTeam = !!justCreatedTeam
 
@@ -369,10 +441,21 @@ export default {
         // 开发阶段：如果是无效URL错误，使用本地存储
         if (error.errMsg?.includes('invalid url') || error.errno === 600009) {
           console.log('开发阶段：API未配置，使用本地存储')
+          // 如果本地存储也没有值，设置为false
+          if (hasTeamFromStorage === null || hasTeamFromStorage === undefined || hasTeamFromStorage === '') {
+            this.hasTeam = false
+          }
         } else {
           // 其他错误，也使用本地存储，但记录日志
           console.warn('使用本地存储的队伍状态')
+          // 如果本地存储也没有值，设置为false
+          if (hasTeamFromStorage === null || hasTeamFromStorage === undefined || hasTeamFromStorage === '') {
+            this.hasTeam = false
+          }
         }
+      } finally {
+        // API调用完成后，无论成功或失败，都标记为检查完成
+        this.isCheckingTeam = false
       }
 
       // 处理新创建的队伍：只有队名为空时才显示创建队名弹窗
@@ -545,6 +628,7 @@ export default {
         // 从后端获取已完成的打卡记录
         const checkinList = await getMyCheckinList()
         console.log('📋 获取到的打卡记录:', checkinList)
+        console.log('📋 当前任务列表:', this.allTasks)
         
         // 初始化每个任务的进度
         this.allTasks.forEach(task => {
@@ -557,52 +641,106 @@ export default {
         })
         
         // 初始化每天的任务完成计数
-        const dailyCount = {}
+        // 使用 Set 来记录每天完成了哪些任务，确保每个任务在同一天只计数一次
+        const dailyTaskSet = {}
         for (let day = 1; day <= 10; day++) {
-          dailyCount[day] = 0
+          dailyTaskSet[day] = new Set()
         }
         
         // 处理打卡记录：按任务ID和天数组织
         if (checkinList && Array.isArray(checkinList)) {
           checkinList.forEach(post => {
+            console.log('📝 处理打卡记录:', post)
+            
             // post.task 可能是任务ID（整数）或任务对象
-            const taskId = typeof post.task === 'object' ? (post.task?.id || post.task?.taskId) : post.task
-            // post.day 是打卡的天数（1-10），如果没有day字段，需要从title中提取或使用默认值
-            let day = post.day || post.task_day
-            if (!day && post.title) {
-              // 从title中提取天数，例如"第1天打卡"
+            let taskId = null
+            if (typeof post.task === 'object' && post.task !== null) {
+              taskId = post.task.id || post.task.taskId || post.task.task_id
+            } else if (post.task !== null && post.task !== undefined) {
+              taskId = post.task
+            }
+            
+            // 从title中提取天数，例如"第1天打卡"或"第1天"
+            let day = null
+            if (post.title) {
+              // 尝试匹配"第X天"或"第X天打卡"格式
               const match = post.title.match(/第(\d+)天/)
               if (match) {
-                day = parseInt(match[1])
+                day = parseInt(match[1], 10)
               }
             }
             
-            if (taskId && day && day >= 1 && day <= 10) {
-              if (!this.taskProgress[taskId]) {
-                this.taskProgress[taskId] = {
-                  completedDays: [],
-                  checkinRecords: []
-                }
-              }
-              
-              // 记录打卡天数
-              if (!this.taskProgress[taskId].completedDays.includes(day)) {
-                this.taskProgress[taskId].completedDays.push(day)
-                // 统计每天完成的任务数
-                dailyCount[day] = (dailyCount[day] || 0) + 1
-              }
-              
-              // 记录打卡详情
-              this.taskProgress[taskId].checkinRecords.push({
-                day,
-                post
-              })
-              
-              console.log(`✅ 记录打卡: taskId=${taskId}, day=${day}`)
-            } else {
-              console.warn(`⚠️ 打卡记录缺少必要字段: taskId=${taskId}, day=${day}`, post)
+            // 如果title中没有，尝试从其他字段获取
+            if (!day) {
+              day = post.day || post.task_day
             }
+            
+            console.log(`🔍 解析结果: taskId=${taskId}, day=${day}, title=${post.title}`)
+            
+            // 验证taskId是否在任务列表中
+            if (!taskId) {
+              console.warn(`⚠️ 打卡记录缺少taskId:`, post)
+              return
+            }
+            
+            // 验证day是否有效
+            if (!day || day < 1 || day > 10) {
+              console.warn(`⚠️ 打卡记录天数无效: day=${day}, title=${post.title}`, post)
+              return
+            }
+            
+            // 将taskId转换为数字，便于匹配
+            const taskIdNum = Number(taskId)
+            
+            // 检查taskId是否在任务列表中（支持字符串和数字匹配）
+            const taskExists = this.allTasks.some(task => {
+              const id = task.taskId
+              return id === taskIdNum || id === taskId || String(id) === String(taskId) || String(id) === String(taskIdNum)
+            })
+            
+            if (!taskExists) {
+              console.warn(`⚠️ 任务ID ${taskId} 不在任务列表中，跳过该记录。任务列表中的ID:`, this.allTasks.map(t => t.taskId))
+              return
+            }
+            
+            // 使用数字类型的taskId
+            taskId = taskIdNum
+            
+            // 初始化该任务的进度（如果还没有）
+            if (!this.taskProgress[taskId]) {
+              this.taskProgress[taskId] = {
+                completedDays: [],
+                checkinRecords: []
+              }
+            }
+            
+            // 记录打卡天数（去重）
+            if (!this.taskProgress[taskId].completedDays.includes(day)) {
+              this.taskProgress[taskId].completedDays.push(day)
+            }
+            
+            // 使用 Set 来记录每天完成了哪些任务，确保每个任务在同一天只计数一次
+            // 即使同一个任务在同一天有多个打卡记录，也只计数一次
+            if (!dailyTaskSet[day].has(taskId)) {
+              dailyTaskSet[day].add(taskId)
+              console.log(`✅ 记录打卡: taskId=${taskId}, day=${day}, 当天已完成任务数=${dailyTaskSet[day].size}`)
+            }
+            
+            // 记录打卡详情
+            this.taskProgress[taskId].checkinRecords.push({
+              day,
+              post
+            })
           })
+        }
+        
+        // 将 Set 转换为计数
+        const dailyCount = {}
+        for (let day = 1; day <= 10; day++) {
+          dailyCount[day] = dailyTaskSet[day].size
+          if (dailyCount[day] > 0) {
+            console.log(`📊 第${day}天完成了 ${dailyCount[day]} 个任务，任务ID:`, Array.from(dailyTaskSet[day]))
+          }
         }
         
         // 更新每天的任务完成进度
@@ -617,21 +755,49 @@ export default {
         this.dailyTaskProgress.day9 = dailyCount[9] || 0
         this.dailyTaskProgress.day10 = dailyCount[10] || 0
         
-        // 计算当前进行到第几天（找到第一个未完成所有任务的天数）
-        let currentDay = 1
-        for (let day = 1; day <= 10; day++) {
-          if (dailyCount[day] < this.allTasks.length) {
-            currentDay = day
-            break
+        console.log('📊 每天任务完成统计:', dailyCount)
+        console.log('📊 更新后的dailyTaskProgress:', this.dailyTaskProgress)
+        
+        // 计算当前进行到第几天（基于实际日期，而不是打卡记录）
+        const todayDay = getCurrentActivityDay()
+        console.log('📅 当前活动天数:', todayDay)
+        if (todayDay !== null) {
+          this.dailyTaskProgress.currentDay = todayDay
+        } else {
+          // 如果活动未开始或已结束，找到最近有打卡记录的那一天
+          let currentDay = 1
+          let maxDayWithCheckin = 0
+          
+          // 找到有打卡记录的最大天数
+          for (let day = 1; day <= 10; day++) {
+            if (dailyCount[day] > 0) {
+              maxDayWithCheckin = Math.max(maxDayWithCheckin, day)
+            }
           }
-          if (day === 10 && dailyCount[10] >= this.allTasks.length) {
-            currentDay = 10 // 全部完成
+          
+          // 如果有打卡记录，使用有打卡记录的最大天数
+          if (maxDayWithCheckin > 0) {
+            currentDay = maxDayWithCheckin
+          } else {
+            // 如果没有打卡记录，使用原来的逻辑：找到第一个未完成所有任务的天数
+            for (let day = 1; day <= 10; day++) {
+              if (dailyCount[day] < this.allTasks.length) {
+                currentDay = day
+                break
+              }
+              if (day === 10 && dailyCount[10] >= this.allTasks.length) {
+                currentDay = 10 // 全部完成
+              }
+            }
           }
+          
+          this.dailyTaskProgress.currentDay = currentDay
+          console.log('📅 活动未开始/已结束，使用计算的天数:', currentDay, '有打卡记录的最大天数:', maxDayWithCheckin)
         }
-        this.dailyTaskProgress.currentDay = currentDay
         
         console.log('📋 任务进度:', this.taskProgress)
         console.log('📋 每天任务完成进度:', this.dailyTaskProgress)
+        console.log('📊 当天已完成任务数:', this.currentDayCompletedTasks)
       } catch (error) {
         console.error('❌ 加载打卡记录失败:', error)
       }
@@ -695,8 +861,9 @@ export default {
       if (this.isDayCompleted(taskId, day)) {
         return 'completed'
       }
-      const currentDay = this.getCurrentDay(taskId)
-      if (currentDay === day) {
+      // 使用实际日期来判断"进行中"状态，而不是基于打卡记录
+      const todayDay = getCurrentActivityDay()
+      if (todayDay !== null && todayDay === day) {
         return 'current'
       }
       return 'pending'
@@ -717,6 +884,17 @@ export default {
         uni.showToast({
           title: '请先选择任务',
           icon: 'none'
+        })
+        return
+      }
+      
+      // 验证是否是当天
+      const checkResult = canCheckinDay(day)
+      if (!checkResult.canCheckin) {
+        uni.showToast({
+          title: checkResult.message,
+          icon: 'none',
+          duration: 2000
         })
         return
       }
@@ -751,6 +929,11 @@ export default {
       if (this.hasTeam) {
         await this.loadCheckinData()
       }
+    },
+    
+    // 检查指定天数是否是今天（用于模板）
+    isToday(day) {
+      return isTodayUtil(day)
     }
   }
 }
@@ -884,19 +1067,13 @@ export default {
   padding: 0 32rpx; /* 左右留出一些空间 */
 }
 
-.task-labels-scroll {
-  margin-top: 24rpx; /* 对应12px */
-}
-
-.task-labels-scroll-view {
-  width: 100%;
-  white-space: nowrap;
-}
-
-.task-labels-container {
-  display: inline-flex;
-  gap: 20rpx; /* 对应10px */
-  padding: 0 32rpx; /* 左右留出一些空间 */
+.task-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12rpx; /* 圆圈和文字之间的间距 */
+  flex-shrink: 0;
+  width: 84rpx; /* 与圆圈宽度一致 */
 }
 
 .task-circle {
@@ -910,6 +1087,7 @@ export default {
   border: 2rpx solid #83CCED; /* 对应1px */
   background: #FFFFFF;
   position: relative;
+  flex-shrink: 0;
 }
 
 .task-circle.selected {
@@ -1051,6 +1229,7 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* 全部任务列表 */
@@ -1092,6 +1271,11 @@ export default {
 .task-row.status-completed {
   border-color: #00C92C;
   background: #F0FFF2;
+}
+
+.task-row.disabled {
+  opacity: 0.5;
+  pointer-events: none;
 }
 
 .task-row-left {
@@ -1199,5 +1383,31 @@ export default {
   font-size: 48rpx; /* 对应24px */
   line-height: 58rpx; /* 对应29px */
   color: #FFFFFF;
+}
+
+/* 加载状态 */
+.loading-container {
+  min-height: 100vh;
+  background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-bottom: 112rpx; /* 为底部导航栏留出空间 */
+}
+
+.loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-text {
+  font-family: 'Inter';
+  font-weight: 400;
+  font-size: 32rpx;
+  line-height: 38rpx;
+  color: #9094A6;
+  margin-top: 20rpx;
 }
 </style>

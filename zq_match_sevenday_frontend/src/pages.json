@@ -83,13 +83,15 @@
       "path": "pages/square/index",
       "style": {
         "navigationBarTitleText": "广场",
+        "navigationStyle": "custom",
         "enablePullDownRefresh": true
       }
     },
     {
       "path": "pages/mine/index",
 			"style": {
-        "navigationBarTitleText": "我的"
+        "navigationBarTitleText": "我的",
+        "navigationStyle": "custom"
 			}
 		},
     {

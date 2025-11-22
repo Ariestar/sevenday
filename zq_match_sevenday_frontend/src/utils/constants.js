@@ -6,6 +6,10 @@
 // 活动天数
 export const ACTIVITY_DAYS = 10
 
+// 活动开始日期（格式：'YYYY-MM-DD'）
+// 请根据实际活动开始日期修改此值
+export const ACTIVITY_START_DATE = '2025-11-22'
+
 // 打卡状态枚举
 export const CHECKIN_STATUS = {
   UN_SUBMIT: 0,   // 未提交

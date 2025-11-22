@@ -26,12 +26,14 @@
           <view class="avatar-section">
             <view class="avatar-circle">
               <image 
-                v-if="teammateInfo.avatar" 
-                :src="teammateInfo.avatar" 
+                v-if="processedAvatar && !processedAvatar.includes('default.jpg')" 
+                :src="processedAvatar" 
                 class="avatar-image" 
                 mode="aspectFill"
               />
-              <view v-else class="avatar-icon"></view>
+              <view v-else class="avatar-placeholder">
+                <image src="/static/square/user-icon.png" class="default-avatar" mode="aspectFill" />
+              </view>
             </view>
           </view>
           
@@ -144,14 +146,6 @@
           <view class="records-header">
             <image class="star-icon" src="/static/checkin/checkin.png" mode="aspectFit"></image>
             <text class="records-title">你们的打卡记录</text>
-          </view>
-
-          <!-- 下拉选择框 -->
-          <view class="dropdown-selector" @click="toggleDropdown">
-            <text class="dropdown-text">第x天打卡记录</text>
-            <view class="dropdown-arrow" :class="{ expanded: dropdownExpanded }">
-              <text class="arrow-icon">▼</text>
-            </view>
           </view>
 
           <!-- 打卡记录列表 -->
@@ -271,6 +265,7 @@ import CustomTabBar from '@/components/CustomTabBar.vue'
 import { getMatchList, requestExchangeTeammate, getExchangeRequest, respondExchangeRequest } from '../../services/match'
 import { getMyCheckinList, getCheckinTasks } from '../../services/checkin'
 import authUtils from '../../utils/auth'
+import { processAvatarUrl } from '../../utils/image'
 
 export default {
   components: {
@@ -278,7 +273,6 @@ export default {
   },
   data() {
     return {
-      dropdownExpanded: false,
       showExchangeConfirmModal: false,
       showWaitingModal: false,
       showResultModal: false,
@@ -308,6 +302,20 @@ export default {
       checkinRecords: []
     }
   },
+  computed: {
+    processedAvatar() {
+      // 处理头像 URL，如果是 default.jpg 或 HTTP 链接，返回空字符串以使用默认头像
+      if (!this.teammateInfo.avatar) {
+        return ''
+      }
+      const processed = processAvatarUrl(this.teammateInfo.avatar)
+      // 如果处理后的 URL 包含 default.jpg，返回空字符串
+      if (processed.includes('default.jpg')) {
+        return ''
+      }
+      return processed
+    }
+  },
   onLoad() {
     this.loadTeammateData()
     this.loadTeamStats()
@@ -330,10 +338,6 @@ export default {
     }
   },
   methods: {
-    toggleDropdown() {
-      this.dropdownExpanded = !this.dropdownExpanded
-    },
-    
     getRecordItemClass(status) {
       return {
         'completed-checked': status === 'completed-checked',
@@ -733,10 +737,22 @@ export default {
       // 处理身份（学历）：前端从年级推断
       const education = this.getEducationFromGrade(teammate.grade)
       
+      // 处理头像 URL：如果是 default.jpg 或 HTTP 链接，使用空字符串（将使用默认头像）
+      let avatar = teammate.avatar || ''
+      if (avatar && (avatar.includes('default.jpg') || avatar.startsWith('http://'))) {
+        avatar = ''
+      } else if (avatar) {
+        avatar = processAvatarUrl(avatar)
+        // 如果处理后仍然是 default.jpg，设置为空
+        if (avatar.includes('default.jpg')) {
+          avatar = ''
+        }
+      }
+      
       this.teammateInfo = {
         id: teammate.id,
         username: teammate.username || teammate.name || '未知',
-        avatar: teammate.avatar || '',
+        avatar: avatar,
         gender: gender,
         education: education,
         majorCategory: teammate.major_category || teammate.majorCategory || '',
@@ -1103,6 +1119,21 @@ export default {
   object-fit: cover;
 }
 
+.avatar-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+}
+
+.default-avatar {
+  width: 80%;
+  height: 80%;
+  opacity: 0.6;
+}
+
 /* 基本信息区域 */
 .info-section {
   position: relative;
@@ -1393,42 +1424,6 @@ export default {
   font-size: 28rpx; /* 对应14px */
   line-height: 34rpx; /* 对应17px */
   color: #A100FE;
-}
-
-/* 下拉选择框样式 */
-.dropdown-selector {
-  width: 100%;
-  height: 80rpx; /* 对应40px */
-  background: #FFFFFF;
-  border: 2rpx solid #C0C0C0; /* 对应1px */
-  border-radius: 24rpx; /* 对应12px */
-  margin-bottom: 20rpx; /* 对应10px */
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24rpx; /* 对应0 12px */
-  box-sizing: border-box;
-}
-
-.dropdown-text {
-  font-family: 'Inter';
-  font-weight: 400;
-  font-size: 28rpx; /* 对应14px */
-  line-height: 34rpx; /* 对应17px */
-  color: #000000;
-}
-
-.dropdown-arrow {
-  transition: transform 0.3s ease;
-}
-
-.dropdown-arrow.expanded {
-  transform: rotate(180deg);
-}
-
-.arrow-icon {
-  font-size: 24rpx; /* 对应12px */
-  color: #000000;
 }
 
 /* 打卡记录列表样式 */

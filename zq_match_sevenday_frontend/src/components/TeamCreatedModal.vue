@@ -10,7 +10,7 @@
       <!-- 标题和内容 -->
       <view class="modal-header">
         <text class="modal-title">组队成功！</text>
-        <text class="modal-subtitle">队名：{{ teamName }}</text>
+        <text class="modal-subtitle" v-if="teamName && teamName.trim()">队名：{{ teamName }}</text>
         <text class="modal-description">开始你们的{{ activityDays }}天打卡之旅吧！</text>
       </view>
       

@@ -352,6 +352,9 @@ export default {
           uni.setStorageSync('hasTeam', true)
           uni.setStorageSync('justCreatedTeam', true)
           
+          // 触发 TabBar 更新
+          uni.$emit('tabbar-update')
+          
           // 检查后端返回的队名
           const teamNameFromAPI = result?.data?.team?.name || result?.team?.name
           if (teamNameFromAPI && teamNameFromAPI.trim()) {
@@ -504,6 +507,7 @@ export default {
   width: 100%;
   min-height: 100vh;
   background: linear-gradient(180deg, #F7E7FF 0%, #FFFFFF 100%);
+  padding-bottom: 120rpx; /* 为底部导航栏留出空间 */
 }
 
 /* 顶部渐变背景 */

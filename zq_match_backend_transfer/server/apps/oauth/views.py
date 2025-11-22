@@ -373,65 +373,96 @@ class EmailVerifyCodeView(APIView):
                     print(f"   验证码: {verify_code}")
                     print(f"{'='*60}\n")
                 
-                # 发送邮件
+                # 发送邮件（带重试机制，用于处理 SSL 连接不稳定问题）
                 if getattr(settings, 'DEBUG', False):
                     print(f"⏳ 正在调用 send_mail()...")
                 
-                try:
-                    import time
-                    start_time = time.time()
-                    
-                    result = send_mail(
-                        subject='专交遇见你 - 邮箱验证码',
-                        message=text_message,
-                        from_email=from_email,
-                        recipient_list=[email],
-                        html_message=html_message,
-                        fail_silently=False,
-                    )
-                    
-                    elapsed_time = time.time() - start_time
-                    
-                    # send_mail返回成功发送的邮件数量（通常是1）
-                    logger.info(f"邮件发送完成 - 返回值: {result}, 耗时: {elapsed_time:.2f}秒, 收件人: {email}")
-                    
-                    if getattr(settings, 'DEBUG', False):
-                        print(f"⏱️  send_mail() 执行完成，耗时: {elapsed_time:.2f}秒")
-                        print(f"📊 send_mail() 返回值: {result}")
-                    
-                    if result == 0:
-                        # 发送失败但没有抛出异常的情况
-                        error_msg = "send_mail返回0，表示邮件未成功发送"
-                        logger.error(error_msg)
-                        if getattr(settings, 'DEBUG', False):
-                            print(f"❌ {error_msg}")
-                        raise Exception(error_msg)
-                    
-                    logger.info(f"验证码邮件已成功发送到: {email}")
-                    
-                    # 开发环境：同时在控制台输出验证码（便于调试）
-                    if getattr(settings, 'DEBUG', False):
-                        print(f"\n{'='*60}")
-                        print(f"✅ 验证码邮件已发送到: {email}")
-                        print(f"📧 验证码: {verify_code}")
-                        print(f"💡 提示: 如果未收到邮件，请检查垃圾箱")
-                        print(f"{'='*60}\n")
+                import time
+                max_retries = 3  # 最大重试次数
+                retry_delay = 2  # 重试延迟（秒）
+                last_error = None
+                
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        start_time = time.time()
                         
-                except Exception as send_error:
-                    # 捕获send_mail内部的异常
-                    error_msg = str(send_error)
-                    error_type = type(send_error).__name__
-                    logger.error(f"send_mail执行失败 - 类型: {error_type}, 错误: {error_msg}", exc_info=True)
-                    
-                    if getattr(settings, 'DEBUG', False):
-                        print(f"\n{'='*60}")
-                        print(f"❌ send_mail() 执行失败")
-                        print(f"   错误类型: {error_type}")
-                        print(f"   错误信息: {error_msg}")
-                        print(f"   验证码: {verify_code} (已保存到缓存)")
-                        print(f"{'='*60}\n")
-                    
-                    raise Exception(f"邮件发送失败 [{error_type}]: {error_msg}")
+                        result = send_mail(
+                            subject='专交遇见你 - 邮箱验证码',
+                            message=text_message,
+                            from_email=from_email,
+                            recipient_list=[email],
+                            html_message=html_message,
+                            fail_silently=False,
+                        )
+                        
+                        elapsed_time = time.time() - start_time
+                        
+                        # send_mail返回成功发送的邮件数量（通常是1）
+                        logger.info(f"邮件发送完成 - 返回值: {result}, 耗时: {elapsed_time:.2f}秒, 收件人: {email}")
+                        
+                        if getattr(settings, 'DEBUG', False):
+                            print(f"⏱️  send_mail() 执行完成，耗时: {elapsed_time:.2f}秒")
+                            print(f"📊 send_mail() 返回值: {result}")
+                        
+                        if result == 0:
+                            # 发送失败但没有抛出异常的情况
+                            error_msg = "send_mail返回0，表示邮件未成功发送"
+                            logger.error(error_msg)
+                            if getattr(settings, 'DEBUG', False):
+                                print(f"❌ {error_msg}")
+                            raise Exception(error_msg)
+                        
+                        logger.info(f"验证码邮件已成功发送到: {email}")
+                        
+                        # 开发环境：同时在控制台输出验证码（便于调试）
+                        if getattr(settings, 'DEBUG', False):
+                            print(f"\n{'='*60}")
+                            print(f"✅ 验证码邮件已发送到: {email}")
+                            print(f"📧 验证码: {verify_code}")
+                            print(f"💡 提示: 如果未收到邮件，请检查垃圾箱")
+                            print(f"{'='*60}\n")
+                        
+                        # 发送成功，跳出重试循环
+                        break
+                        
+                    except Exception as send_error:
+                        # 捕获send_mail内部的异常
+                        error_msg = str(send_error)
+                        error_type = type(send_error).__name__
+                        last_error = send_error
+                        
+                        # 检查是否是 SSL 相关错误
+                        is_ssl_error = 'SSL' in error_type or 'ssl' in error_msg.lower() or 'EOF' in error_msg
+                        
+                        if attempt < max_retries:
+                            # 还有重试机会
+                            logger.warning(f"邮件发送失败 (尝试 {attempt}/{max_retries}) - 类型: {error_type}, 错误: {error_msg}, {retry_delay}秒后重试...")
+                            
+                            if getattr(settings, 'DEBUG', False):
+                                print(f"⚠️  邮件发送失败 (尝试 {attempt}/{max_retries})")
+                                print(f"   错误类型: {error_type}")
+                                print(f"   错误信息: {error_msg}")
+                                if is_ssl_error:
+                                    print(f"   💡 检测到 SSL 错误，{retry_delay}秒后重试...")
+                                else:
+                                    print(f"   {retry_delay}秒后重试...")
+                            
+                            time.sleep(retry_delay)
+                            # 每次重试后增加延迟
+                            retry_delay *= 1.5
+                        else:
+                            # 所有重试都失败了
+                            logger.error(f"send_mail执行失败 (已重试 {max_retries} 次) - 类型: {error_type}, 错误: {error_msg}", exc_info=True)
+                            
+                            if getattr(settings, 'DEBUG', False):
+                                print(f"\n{'='*60}")
+                                print(f"❌ send_mail() 执行失败 (已重试 {max_retries} 次)")
+                                print(f"   错误类型: {error_type}")
+                                print(f"   错误信息: {error_msg}")
+                                print(f"   验证码: {verify_code} (已保存到缓存)")
+                                print(f"{'='*60}\n")
+                            
+                            raise Exception(f"邮件发送失败 [{error_type}]: {error_msg}")
                 
                 # 返回数据，让自定义渲染器自动包装
                 # 开发环境返回验证码，生产环境应移除

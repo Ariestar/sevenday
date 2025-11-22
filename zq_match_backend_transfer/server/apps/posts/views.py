@@ -17,6 +17,29 @@ from zq_django_util.exceptions import ApiException
 from zq_django_util.response import ResponseType
 
 
+def get_photo_url(post, request):
+    """获取并修正图片URL"""
+    if not post or not post.photo:
+        return None
+    
+    # 获取photo路径
+    photo_path = post.photo.name if hasattr(post.photo, 'name') else str(post.photo)
+    
+    # 修正路径：如果路径中包含checkin/，替换为post/photo/
+    if 'checkin/' in photo_path:
+        # 提取文件名
+        filename = photo_path.split('checkin/')[-1]
+        photo_path = f"post/photo/{filename}"
+    
+    # 构建URL
+    from django.conf import settings
+    url_path = photo_path.replace('\\', '/')  # Windows路径转URL路径
+    if not url_path.startswith('/'):
+        url_path = '/' + url_path
+    media_url = settings.MEDIA_URL.rstrip('/')
+    return request.build_absolute_uri(f"{media_url}{url_path}")
+
+
 class PostViewSet(
     viewsets.GenericViewSet,
     viewsets.mixins.ListModelMixin,
@@ -107,7 +130,7 @@ class PostViewSet(
         post = serializer.save(team=user.team, task=task)
         
         # 返回完整信息
-        response_serializer = PostSerializer(post)
+        response_serializer = PostSerializer(post, context={'request': request})
         return Response(
             {
                 "message": "打卡成功",
@@ -344,7 +367,7 @@ class PostViewSet(
         else:
             # 如果有图片URL，手动创建Post对象
             if photo_url:
-                # 处理图片URL：提取相对路径
+                # 处理图片URL：提取相对路径并修正路径错误
                 if photo_url.startswith('http'):
                     # 提取相对路径（假设URL格式为 http://host/media/...）
                     if '/media/' in photo_url:
@@ -355,6 +378,19 @@ class PostViewSet(
                 else:
                     # 已经是相对路径
                     relative_path = photo_url
+                
+                # 修正路径：如果路径中包含checkin/，替换为post/photo/
+                if 'checkin/' in relative_path:
+                    # 提取文件名
+                    filename = relative_path.split('checkin/')[-1]
+                    relative_path = f"post/photo/{filename}"
+                elif not relative_path.startswith('post/photo/'):
+                    # 如果路径不是post/photo/开头，确保它是
+                    if '/' in relative_path:
+                        filename = relative_path.split('/')[-1]
+                    else:
+                        filename = relative_path
+                    relative_path = f"post/photo/{filename}"
                 
                 # 创建Post对象，手动设置photo字段和is_published字段
                 post = Post.objects.create(
@@ -376,7 +412,7 @@ class PostViewSet(
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
-        response_serializer = PostSerializer(post)
+        response_serializer = PostSerializer(post, context={'request': request})
         return Response(
             {
                 "message": "打卡成功",
@@ -445,8 +481,8 @@ class PostViewSet(
                 'introduction': task.introduction,
                 'score': task.score,
             },
-            'myCheckin': PostSerializer(my_post).data if my_post else None,
-            'teammateCheckin': PostSerializer(teammate_post).data if teammate_post else None,
+            'myCheckin': PostSerializer(my_post, context={'request': request}).data if my_post else None,
+            'teammateCheckin': PostSerializer(teammate_post, context={'request': request}).data if teammate_post else None,
         }
         
         return Response(result)
@@ -482,6 +518,11 @@ class PostViewSet(
         """上传打卡图片 - 前端接口"""
         from zq_django_util.exceptions import ApiException
         from zq_django_util.response import ResponseType
+        from django.core.files.storage import default_storage
+        from django.core.files.base import ContentFile
+        import os
+        import uuid
+        from django.conf import settings
         
         # 兼容两种字段名：image 和 file（前端可能使用 file）
         image_file = request.FILES.get('image') or request.FILES.get('file')
@@ -506,17 +547,62 @@ class PostViewSet(
                 msg="只支持 JPG、PNG、WEBP 格式的图片",
             )
         
-        # 保存图片（这里简化处理，实际应该保存到Post模型或临时存储）
-        # 暂时返回一个占位URL，实际应该保存文件并返回真实URL
-        # TODO: 实现图片保存逻辑
-        
-        return Response({
-            "code": "00000",
-            "msg": "图片上传成功",
-            "data": {
-                "url": request.build_absolute_uri(f"/media/checkin/{image_file.name}")
+        # 生成唯一文件名：使用UUID + 原始文件扩展名
+        original_name = image_file.name
+        file_ext = os.path.splitext(original_name)[1].lower()
+        if not file_ext:
+            # 如果没有扩展名，根据content_type推断
+            content_type_map = {
+                'image/jpeg': '.jpg',
+                'image/jpg': '.jpg',
+                'image/png': '.png',
+                'image/webp': '.webp',
             }
-        })
+            file_ext = content_type_map.get(image_file.content_type, '.jpg')
+        
+        # 生成唯一文件名：post/photo/uuid.ext
+        # 使用与Post模型相同的路径格式（post/photo）
+        unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+        upload_path = f"post/photo/{unique_filename}"
+        
+        # 保存文件
+        try:
+            # 读取文件内容
+            file_content = image_file.read()
+            # 使用default_storage保存文件
+            saved_path = default_storage.save(upload_path, ContentFile(file_content))
+            
+            # 构建文件URL
+            # 使用default_storage.url()方法获取URL（如果支持），否则手动构建
+            try:
+                photo_url = default_storage.url(saved_path)
+            except (AttributeError, NotImplementedError):
+                # 如果storage不支持url()方法，手动构建URL
+                # saved_path通常是相对路径（相对于MEDIA_ROOT）
+                # 需要转换为URL路径（使用正斜杠）
+                url_path = saved_path.replace('\\', '/')  # Windows路径转URL路径
+                if not url_path.startswith('/'):
+                    url_path = '/' + url_path
+                photo_url = f"{settings.MEDIA_URL.rstrip('/')}{url_path}"
+            
+            # 构建完整URL（包含域名）
+            photo_url = request.build_absolute_uri(photo_url)
+            
+            return Response({
+                "code": "00000",
+                "msg": "图片上传成功",
+                "data": {
+                    "url": photo_url
+                }
+            })
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"保存打卡图片失败: {str(e)}", exc_info=True)
+            raise ApiException(
+                ResponseType.InternalServerError,
+                msg=f"图片保存失败: {str(e)}",
+            )
     
     @action(methods=["post"], detail=False, url_path="resubmit")
     def checkin_resubmit(self, request):
@@ -556,7 +642,7 @@ class PostViewSet(
         
         post.save()
         
-        serializer = PostSerializer(post)
+        serializer = PostSerializer(post, context={'request': request})
         return Response(
             {
                 "message": "重新提交成功",
@@ -619,10 +705,8 @@ class PostViewSet(
             # 获取评论数
             comment_count = post.comments.count()
             
-            # 构建图片URL
-            photo_url = None
-            if post.photo:
-                photo_url = request.build_absolute_uri(post.photo.url)
+            # 构建图片URL（修正路径错误）
+            photo_url = get_photo_url(post, request)
             
             result.append({
                 'postId': post.id,
@@ -743,10 +827,8 @@ class PostViewSet(
                 'createTime': comment.create_time.isoformat() if comment.create_time else None,
             })
         
-        # 构建图片URL
-        photo_url = None
-        if post.photo:
-            photo_url = request.build_absolute_uri(post.photo.url)
+        # 构建图片URL（修正路径错误）
+        photo_url = get_photo_url(post, request)
         
         return Response({
             'postId': post.id,
@@ -848,5 +930,5 @@ class PostViewSet(
             'shareUrl': share_url,
             'postId': post.id,
             'title': post.title,
-            'photo': request.build_absolute_uri(post.photo.url) if post.photo else None,
+            'photo': get_photo_url(post, request),
         })
