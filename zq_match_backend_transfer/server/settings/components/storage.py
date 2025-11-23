@@ -31,11 +31,10 @@ try:
         # 优先自动检测 RAM 角色，如果检测失败再使用环境变量指定的角色名称
         # 这样可以避免环境变量配置错误导致的问题
         role_name = None
-        detected_role = None
         logger.info("🔍 自动检测 RAM 角色...")
         try:
             role_url = "http://100.100.100.200/latest/meta-data/Ram/security-credentials/"
-            role_response = requests.get(role_url, timeout=5)  # 增加超时时间
+            role_response = requests.get(role_url, timeout=2)
             if role_response.status_code == 200:
                 detected_role = role_response.text.strip()
                 if detected_role:
@@ -45,30 +44,17 @@ try:
                     logger.warning("⚠️  ECS 实例未绑定 RAM 角色")
             else:
                 logger.warning(f"⚠️  无法获取 RAM 角色，状态码: {role_response.status_code}")
-                logger.debug(f"响应内容: {role_response.text[:200]}")
-        except requests.exceptions.Timeout:
-            logger.warning("⚠️  获取 RAM 角色超时")
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"⚠️  获取 RAM 角色失败（网络错误）: {str(e)}")
         except Exception as e:
             logger.warning(f"⚠️  获取 RAM 角色失败: {str(e)}")
-            import traceback
-            logger.debug(traceback.format_exc())
         
         # 如果自动检测失败，尝试使用环境变量指定的角色名称
-        # 但会记录警告，因为环境变量可能配置错误
         if not role_name:
             env_role_name = config("ALIYUN_OSS_ROLE_NAME", None)
             if env_role_name:
                 role_name = env_role_name
-                logger.warning(f"⚠️  自动检测失败，使用环境变量指定的角色: {role_name}（请确认此角色名称正确）")
+                logger.info(f"📌 使用环境变量指定的角色: {role_name}")
             else:
                 logger.warning("⚠️  未找到 RAM 角色（自动检测和环境变量都未配置）")
-        elif detected_role and config("ALIYUN_OSS_ROLE_NAME", None):
-            # 如果自动检测成功，但环境变量也设置了，记录信息
-            env_role = config("ALIYUN_OSS_ROLE_NAME", None)
-            if env_role != detected_role:
-                logger.info(f"ℹ️  环境变量中的角色名称 '{env_role}' 与自动检测的角色 '{detected_role}' 不一致，使用自动检测的结果")
         
         # 获取凭证
         if role_name:

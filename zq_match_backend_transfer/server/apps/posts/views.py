@@ -522,20 +522,66 @@ class PostViewSet(
         
         # 实际保存文件到OSS
         try:
+            import logging
+            logger = logging.getLogger(__name__)
+            
             # 验证使用的存储后端类型
             storage_type = type(default_storage).__name__
             storage_module = type(default_storage).__module__
             
-            import logging
-            logger = logging.getLogger(__name__)
             logger.info(f"当前使用的存储后端: {storage_module}.{storage_type}")
             
+            # 检查配置的存储后端
+            from django.conf import settings
+            configured_storage = getattr(settings, 'DEFAULT_FILE_STORAGE', 'Not configured')
+            logger.info(f"配置的存储后端: {configured_storage}")
+            
             if 'AliyunOSSStorage' not in storage_type:
+                # 尝试诊断问题
+                diagnostic_info = []
+                diagnostic_info.append(f"当前使用: {storage_module}.{storage_type}")
+                diagnostic_info.append(f"期望: server.utils.oss_storage.AliyunOSSStorage")
+                diagnostic_info.append(f"配置值: {configured_storage}")
+                
+                # 检查OSS配置
+                oss_config = getattr(settings, 'ALIYUN_OSS', {})
+                if not oss_config:
+                    diagnostic_info.append("❌ ALIYUN_OSS 配置不存在")
+                else:
+                    bucket_name = oss_config.get('BUCKET_NAME', '')
+                    endpoint = oss_config.get('ENDPOINT', '')
+                    has_access_key = bool(oss_config.get('ACCESS_KEY_ID', ''))
+                    has_secret = bool(oss_config.get('ACCESS_KEY_SECRET', ''))
+                    has_token = bool(oss_config.get('SECURITY_TOKEN', ''))
+                    
+                    diagnostic_info.append(f"Bucket名称: {bucket_name if bucket_name else '❌ 未配置'}")
+                    diagnostic_info.append(f"Endpoint: {endpoint if endpoint else '❌ 未配置'}")
+                    diagnostic_info.append(f"AccessKey: {'✅ 已配置' if has_access_key else '❌ 未配置'}")
+                    diagnostic_info.append(f"SecretKey: {'✅ 已配置' if has_secret else '❌ 未配置'}")
+                    diagnostic_info.append(f"SecurityToken: {'✅ 已配置' if has_token else '⚠️  未配置（可能使用永久AccessKey）'}")
+                
+                # 尝试导入存储后端类
+                try:
+                    from server.utils.oss_storage import AliyunOSSStorage
+                    diagnostic_info.append("✅ AliyunOSSStorage 类可以正常导入")
+                    
+                    # 尝试创建实例（用于诊断）
+                    try:
+                        test_storage = AliyunOSSStorage()
+                        diagnostic_info.append("✅ AliyunOSSStorage 实例可以创建")
+                    except Exception as e:
+                        diagnostic_info.append(f"❌ AliyunOSSStorage 实例创建失败: {str(e)}")
+                        import traceback
+                        diagnostic_info.append(f"详细错误: {traceback.format_exc()}")
+                except Exception as e:
+                    diagnostic_info.append(f"❌ 无法导入 AliyunOSSStorage: {str(e)}")
+                    import traceback
+                    diagnostic_info.append(f"详细错误: {traceback.format_exc()}")
+                
                 error_msg = (
                     f"存储后端配置错误！\n"
-                    f"当前使用: {storage_module}.{storage_type}\n"
-                    f"期望: server.utils.oss_storage.AliyunOSSStorage\n"
-                    f"请检查:\n"
+                    f"{chr(10).join(diagnostic_info)}\n"
+                    f"\n请检查:\n"
                     f"1. DEFAULT_FILE_STORAGE 配置是否正确\n"
                     f"2. OSS 凭证是否配置正确\n"
                     f"3. OSS 存储后端是否初始化成功"
@@ -577,6 +623,8 @@ class PostViewSet(
             # 重新抛出ApiException
             raise
         except Exception as e:
+            import traceback
+            logger.error(f"图片保存失败: {str(e)}\n{traceback.format_exc()}")
             raise ApiException(
                 ResponseType.ServerError,
                 msg=f"图片保存失败: {str(e)}",
