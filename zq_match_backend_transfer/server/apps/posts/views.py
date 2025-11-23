@@ -712,7 +712,7 @@ class PostViewSet(
             import traceback
             error_msg = f"获取广场列表失败: {str(e)}\n{traceback.format_exc()}"
             raise ApiException(
-                ResponseType.InternalServerError,
+                ResponseType.ServerError,  # 修改：从 InternalServerError 改为 ServerError
                 msg=error_msg,
             )
         
