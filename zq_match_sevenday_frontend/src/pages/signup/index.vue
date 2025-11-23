@@ -24,7 +24,7 @@
     <!-- 头像区域 -->
     <view class="avatar-section">
       <view class="avatar-container" @click="chooseAvatar">
-        <image v-if="formData.avatar && !formData.avatar.includes('default.jpg')" :src="formData.avatar" class="avatar-image" mode="aspectFill" />
+        <image v-if="formData.avatar" :src="formData.avatar" class="avatar-image" mode="aspectFill" />
         <view v-else class="avatar-placeholder">
           <text class="avatar-plus">+</text>
         </view>
@@ -163,11 +163,8 @@
 <script>
 import { GENDER_OPTIONS, DEGREE_OPTIONS, MAJOR_CATEGORY_OPTIONS } from '../../utils/constants'
 import { submitSignup, getSignupDetail, cancelSignup, updateSignup } from '../../services/signup'
-import { getTeamInfo } from '../../services/match'
-import { updateUserInfo } from '../../services/auth'
 import { uploadAvatar } from '../../services/upload'
 import { getAcademies } from '../../services/academies'
-import authUtils from '../../utils/auth'
 import CustomTabBar from '../../components/CustomTabBar.vue'
 import SignupTypePicker from '../../components/SignupTypePicker.vue'
 import SuccessModal from '../../components/SuccessModal.vue'
@@ -217,7 +214,6 @@ export default {
   onShow() {
     // 触发TabBar更新，确保选中状态正确
     uni.$emit('tabbar-update')
-    this.checkTeamStatus()
   },
   methods: {
     async loadSignupDetail() {
@@ -251,18 +247,6 @@ export default {
             gender: genderValue || detail.gender,
             degree: degreeValue || detail.degree
           }
-          
-          // 如果有院系信息，尝试设置院系ID
-          if (this.formData.college && this.academyOptions.length > 0) {
-            const academy = this.academyOptions.find(a => a.name === this.formData.college)
-            if (academy) {
-              this.formData.academyId = academy.id
-            }
-          } else if (detail.academy && typeof detail.academy === 'number') {
-            // 如果后端返回的是院系ID
-            this.formData.academyId = detail.academy
-          }
-          
           this.isEdit = true
           
           console.log('✅ 最终formData:', this.formData)
@@ -288,7 +272,6 @@ export default {
       const academy = this.academyOptions[index]
       if (academy) {
         this.formData.college = academy.name
-        this.formData.academyId = academy.id // 保存院系ID
       }
     },
     getAcademyName(value) {
@@ -406,10 +389,8 @@ export default {
         this.submitting = false
       }
 
-      // 如果保存成功，同步用户信息并显示成功弹窗
+      // 如果保存成功，显示成功弹窗
       if (saveSuccess) {
-        // 同步用户信息
-        await this.syncUserInfo()
         this.successType = 'save'
         this.successTitle = '保存成功！'
         this.showSuccessModal = true
@@ -506,111 +487,59 @@ export default {
         this.submitting = false
       }
 
-      // 如果提交成功（或开发阶段模拟成功），同步用户信息到个人信息页面
+      // 如果提交成功（或开发阶段模拟成功），显示成功弹窗
       if (submitSuccess) {
-        // 同步用户信息
-        await this.syncUserInfo()
         this.successType = 'signup'
         this.successTitle = '报名成功！'
         this.showSuccessModal = true
       }
     },
-    
-    /**
-     * 同步报名信息到用户信息
-     */
-    async syncUserInfo() {
-      try {
-        // 检查是否有必填字段
-        if (!this.formData.name || !this.formData.qq) {
-          console.log('缺少必填字段，跳过同步用户信息')
-          return
-        }
-
-        // 转换性别：前端使用 'male'/'female'，后端需要 1/2
-        let genderValue = null
-        if (this.formData.gender === 'male') {
-          genderValue = 1
-        } else if (this.formData.gender === 'female') {
-          genderValue = 2
-        }
-
-        // 准备要同步的数据
-        const updateData = {
-          username: this.formData.name, // 后端期望 username，不是 name
-          qq: this.formData.qq
-        }
-
-        // 如果有性别，添加性别字段
-        if (genderValue !== null) {
-          updateData.gender = genderValue
-        }
-
-        // 如果有院系ID，添加院系字段（后端期望 academy ID，不是 college 名称）
-        if (this.formData.academyId) {
-          updateData.academy = this.formData.academyId
-        } else if (this.formData.college) {
-          // 如果没有ID但有名称，尝试从列表中查找ID
-          const academy = this.academyOptions.find(a => a.name === this.formData.college)
-          if (academy) {
-            updateData.academy = academy.id
-            this.formData.academyId = academy.id // 保存ID以便后续使用
-          }
-        }
-
-        // 如果有头像，添加头像字段
-        if (this.formData.avatar) {
-          updateData.avatar = this.formData.avatar
-        }
-
-        // 调用更新用户信息接口
-        await updateUserInfo(updateData)
-        
-        // 更新本地存储的用户信息
-        const localUserInfo = authUtils.getUserInfo() || {}
-        const updatedUserInfo = {
-          ...localUserInfo,
-          name: this.formData.name,
-          username: this.formData.name,
-          gender: this.formData.gender,
-          college: this.formData.college,
-          academyId: this.formData.academyId,
-          qq: this.formData.qq,
-          avatar: this.formData.avatar || localUserInfo.avatar
-        }
-        authUtils.setUserInfo(updatedUserInfo)
-        
-        console.log('✅ 用户信息同步成功')
-      } catch (err) {
-        console.error('同步用户信息失败:', err)
-        // 不显示错误提示，避免影响用户体验
-      }
-    },
-
     handleSuccessClose() {
       this.showSuccessModal = false
       
-      // 统一跳转到多人匹配页面（tabBar页面）
+      // 简化跳转逻辑，根据报名类型跳转到不同页面
+      const targetUrl = this.pendingSignupType === 'single' 
+        ? '/pages/single-match/index'    // 单人匹配页面
+        : '/pages/multiple-match/index'  // 多人匹配页面（tabBar页面）
+      
+      console.log(`报名类型: ${this.pendingSignupType}, 跳转到: ${targetUrl}`)
+      
       setTimeout(() => {
-        uni.switchTab({
-          url: '/pages/multiple-match/index',
-          success: () => {
-            console.log('跳转到组队匹配页面成功')
-          },
-          fail: (err) => {
-            console.warn('switchTab失败，尝试reLaunch:', err)
-            uni.reLaunch({
-              url: '/pages/multiple-match/index',
-              success: () => {
-                console.log('reLaunch到组队匹配页面成功')
-              },
-              fail: (err2) => {
-                console.warn('跳转失败:', err2)
-                console.log('如果在开发工具中跳转失败，请手动切换到匹配页面')
-              }
-            })
-          }
-        })
+        if (this.pendingSignupType === 'single') {
+          // 单人匹配页面 - 使用 reLaunch 重启应用到目标页面
+          uni.reLaunch({
+            url: targetUrl,
+            success: () => {
+              console.log('跳转到单人匹配页面成功')
+            },
+            fail: (err) => {
+              console.warn('跳转失败:', err)
+              // 开发者工具中可能会失败，这是正常的
+              console.log('如果在开发工具中跳转失败，请手动切换到单人匹配页面')
+            }
+          })
+        } else {
+          // 组队匹配页面 - TabBar页面，使用 switchTab
+          uni.switchTab({
+            url: targetUrl,
+            success: () => {
+              console.log('跳转到组队匹配页面成功')
+            },
+            fail: (err) => {
+              console.warn('switchTab失败，尝试reLaunch:', err)
+              uni.reLaunch({
+                url: targetUrl,
+                success: () => {
+                  console.log('reLaunch到组队匹配页面成功')
+                },
+                fail: (err2) => {
+                  console.warn('跳转失败:', err2)
+                  console.log('如果在开发工具中跳转失败，请手动切换到匹配页面')
+                }
+              })
+            }
+          })
+        }
       }, 300)
     },
     goToMatch() {
@@ -676,32 +605,6 @@ export default {
             }
           }
         }
-      })
-    },
-    async checkTeamStatus() {
-      try {
-        // Check local storage first
-        const localHasTeam = uni.getStorageSync('hasTeam')
-        if (localHasTeam) {
-          this.redirectToMatch()
-          return
-        }
-        
-        // Check API
-        const res = await getTeamInfo()
-        if (res && res.team) {
-          uni.setStorageSync('hasTeam', true)
-          this.redirectToMatch()
-        } else {
-          uni.removeStorageSync('hasTeam')
-        }
-      } catch (err) {
-        console.error('Check team status failed:', err)
-      }
-    },
-    redirectToMatch() {
-      uni.switchTab({
-        url: '/pages/multiple-match/index'
       })
     }
   }
@@ -929,13 +832,6 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 64rpx;
-  padding: 0;
-  margin: 0;
-}
-
-.cancel-btn::after {
-  border: none;
 }
 
 .save-btn {
@@ -949,13 +845,6 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  line-height: 64rpx;
-  padding: 0;
-  margin: 0;
-}
-
-.save-btn::after {
-  border: none;
 }
 
 /* 表单容器 - 精确按Figma设计 */

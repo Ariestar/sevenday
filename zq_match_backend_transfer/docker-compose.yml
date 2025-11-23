@@ -10,6 +10,8 @@ services:
       - redis
     ports:
       - "8000:8000"
+    environment:
+      - DJANGO_ENV=production
     env_file:
       - .env
     networks:
@@ -20,7 +22,7 @@ services:
     depends_on:
       - django
     environment:
-      - DJANGO_ALLOWED_HOSTS=121.40.155.61,localhost,127.0.0.1
+      - DJANGO_ALLOWED_HOSTS=47.99.93.160,localhost,127.0.0.1
     networks:
       - app-net
       - traefik

@@ -54,5 +54,5 @@ export const MAJOR_CATEGORY_OPTIONS = [
 
 // API 接口前缀
 // 正式环境：设置为实际后端服务器地址
-export const API_BASE_URL = 'http://121.40.155.61:8000'// 空字符串表示使用相对路径，或者设置为完整URL如 'https://api.example.com/api'
+export const API_BASE_URL = 'http://47.99.93.160:8000'// 空字符串表示使用相对路径，或者设置为完整URL如 'https://api.example.com/api'
 

@@ -5,9 +5,6 @@ export default {
     
     // 应用启动时检查组队状态
     this.checkTeamStatusOnLaunch()
-    
-    // 启用分享功能
-    this.enableShare()
   },
   onShow: function () {
     console.log('App Show');
@@ -18,24 +15,7 @@ export default {
   onHide: function () {
     console.log('App Hide');
   },
-  // 全局分享配置（作为默认分享配置）
-  onShareAppMessage(res) {
-    return {
-      title: '专交遇见你 - 七天打卡活动',
-      path: '/pages/square/index',
-      imageUrl: '' // 可选：分享图片，如果不设置则使用小程序默认图片
-    }
-  },
   methods: {
-    enableShare() {
-      // 在微信小程序中启用分享菜单
-      // #ifdef MP-WEIXIN
-      uni.showShareMenu({
-        withShareTicket: true,
-        menus: ['shareAppMessage', 'shareTimeline']
-      })
-      // #endif
-    },
     async checkTeamStatusOnLaunch() {
       try {
         // 先检查本地存储
