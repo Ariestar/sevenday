@@ -44,12 +44,32 @@ class AliyunOSSStorage(Storage):
     
     def _refresh_credentials(self):
         """刷新凭证（优先从ECS获取，否则使用配置）"""
-        # 尝试从ECS元数据服务获取最新凭证（自动检测RAM角色）
+        # 尝试从ECS元数据服务获取最新凭证（优先自动检测RAM角色）
         try:
-            from server.utils.ecs_credentials import get_sts_credentials_from_ecs
+            from server.utils.ecs_credentials import get_sts_credentials_from_ecs, is_ecs_instance
             from django.conf import settings
-            # 优先使用配置中指定的角色名称，否则自动检测
-            role_name = self.oss_config.get('ROLE_NAME', None)
+            import requests
+            
+            # 如果在 ECS 上，优先自动检测角色名称
+            role_name = None
+            if is_ecs_instance():
+                try:
+                    role_url = "http://100.100.100.200/latest/meta-data/Ram/security-credentials/"
+                    role_response = requests.get(role_url, timeout=2)
+                    if role_response.status_code == 200:
+                        detected_role = role_response.text.strip()
+                        if detected_role:
+                            role_name = detected_role
+                            logger.debug(f"自动检测到 RAM 角色: {role_name}")
+                except Exception:
+                    pass
+            
+            # 如果自动检测失败，使用配置中指定的角色名称
+            if not role_name:
+                role_name = self.oss_config.get('ROLE_NAME', None)
+                if role_name:
+                    logger.debug(f"使用配置的 RAM 角色: {role_name}")
+            
             ecs_credentials = get_sts_credentials_from_ecs(role_name=role_name)
             
             if ecs_credentials and all(ecs_credentials.values()):

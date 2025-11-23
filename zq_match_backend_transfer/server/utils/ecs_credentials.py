@@ -44,14 +44,23 @@ def get_sts_credentials_from_ecs(role_name: Optional[str] = None) -> Optional[Di
         # 获取STS临时凭证
         credentials_url = f"{ECS_METADATA_BASE_URL}/Ram/security-credentials/{role_name}"
         try:
+            logger.debug(f"正在访问: {credentials_url}")
             response = requests.get(credentials_url, timeout=ECS_METADATA_TIMEOUT)
             
             if response.status_code == 200:
-                credentials_data = response.json()
+                try:
+                    credentials_data = response.json()
+                except json.JSONDecodeError as e:
+                    logger.error(f"❌ 解析凭证响应失败（可能返回了HTML）: {str(e)}")
+                    logger.debug(f"响应内容前200字符: {response.text[:200]}")
+                    return None
                 
                 # 检查返回的Code字段
-                if credentials_data.get('Code') != 'Success':
-                    logger.warning(f"ECS元数据服务返回错误: {credentials_data.get('Code')}")
+                code = credentials_data.get('Code')
+                if code != 'Success':
+                    message = credentials_data.get('Message', 'Unknown error')
+                    logger.error(f"❌ ECS元数据服务返回错误 - Code: {code}, Message: {message}")
+                    logger.debug(f"完整响应: {credentials_data}")
                     return None
                 
                 # 提取凭证信息
@@ -62,22 +71,27 @@ def get_sts_credentials_from_ecs(role_name: Optional[str] = None) -> Optional[Di
                 }
                 
                 # 验证凭证完整性
-                if all(credentials.values()):
-                    logger.info(f"成功从ECS元数据服务获取STS凭证，角色: {role_name}")
-                    logger.debug(f"凭证过期时间: {credentials_data.get('Expiration', 'Unknown')}")
-                    return credentials
-                else:
-                    logger.warning("从ECS获取的STS凭证不完整")
+                missing_fields = [k for k, v in credentials.items() if not v]
+                if missing_fields:
+                    logger.error(f"❌ 从ECS获取的STS凭证不完整，缺少字段: {missing_fields}")
+                    logger.debug(f"完整响应: {credentials_data}")
                     return None
+                
+                logger.info(f"✅ 成功从ECS元数据服务获取STS凭证，角色: {role_name}")
+                logger.debug(f"凭证过期时间: {credentials_data.get('Expiration', 'Unknown')}")
+                return credentials
             else:
-                logger.debug(f"无法获取STS凭证，状态码: {response.status_code}")
+                logger.error(f"❌ 无法获取STS凭证，状态码: {response.status_code}")
+                logger.debug(f"响应内容前500字符: {response.text[:500]}")
                 return None
                 
         except requests.exceptions.RequestException as e:
-            logger.debug(f"无法连接到ECS元数据服务获取凭证: {str(e)}")
+            logger.error(f"❌ 无法连接到ECS元数据服务获取凭证: {str(e)}")
             return None
         except (json.JSONDecodeError, KeyError) as e:
-            logger.warning(f"解析ECS元数据服务响应失败: {str(e)}")
+            logger.error(f"❌ 解析ECS元数据服务响应失败: {str(e)}")
+            import traceback
+            logger.debug(traceback.format_exc())
             return None
             
     except Exception as e:

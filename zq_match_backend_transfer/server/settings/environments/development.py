@@ -17,6 +17,8 @@ ALLOWED_HOSTS = [
 
 # 开发阶段这样写
 MEDIA_ROOT = "static_files"
+# 确保使用 OSS 存储（如果 storage.py 中已配置）
+# 如果 OSS 配置失败，这里会使用默认的文件系统存储
 SERVER_URL = config("SERVER_URL", "https://test.match.ziqiang.net.cn")
 
 # 放开本地联调 CORS（生产环境仍使用白名单）

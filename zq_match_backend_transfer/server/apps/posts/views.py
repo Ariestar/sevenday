@@ -506,17 +506,81 @@ class PostViewSet(
                 msg="只支持 JPG、PNG、WEBP 格式的图片",
             )
         
-        # 保存图片（这里简化处理，实际应该保存到Post模型或临时存储）
-        # 暂时返回一个占位URL，实际应该保存文件并返回真实URL
-        # TODO: 实现图片保存逻辑
+        # 生成唯一文件名（避免文件名冲突）
+        import os
+        import uuid
+        from django.core.files.storage import default_storage
         
-        return Response({
-            "code": "00000",
-            "msg": "图片上传成功",
-            "data": {
-                "url": request.build_absolute_uri(f"/media/checkin/{image_file.name}")
-            }
-        })
+        file_ext = os.path.splitext(image_file.name)[1] or '.jpg'
+        # 确保扩展名正确
+        if file_ext.lower() not in ['.jpg', '.jpeg', '.png', '.webp']:
+            file_ext = '.jpg'
+        
+        unique_filename = f"{uuid.uuid4().hex}{file_ext}"
+        # 保存路径：zq-match-test/post/photo/（测试目录）
+        save_path = f"zq-match-test/post/photo/{unique_filename}"
+        
+        # 实际保存文件到OSS
+        try:
+            # 验证使用的存储后端类型
+            storage_type = type(default_storage).__name__
+            storage_module = type(default_storage).__module__
+            
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.info(f"当前使用的存储后端: {storage_module}.{storage_type}")
+            
+            if 'AliyunOSSStorage' not in storage_type:
+                error_msg = (
+                    f"存储后端配置错误！\n"
+                    f"当前使用: {storage_module}.{storage_type}\n"
+                    f"期望: server.utils.oss_storage.AliyunOSSStorage\n"
+                    f"请检查:\n"
+                    f"1. DEFAULT_FILE_STORAGE 配置是否正确\n"
+                    f"2. OSS 凭证是否配置正确\n"
+                    f"3. OSS 存储后端是否初始化成功"
+                )
+                logger.error(error_msg)
+                raise ApiException(
+                    ResponseType.ServerError,
+                    msg=error_msg,
+                )
+            
+            logger.info(f"✅ 使用 OSS 存储后端，准备保存文件到: {save_path}")
+            saved_path = default_storage.save(save_path, image_file)
+            logger.info(f"✅ 文件保存成功，路径: {saved_path}")
+            
+            # 验证文件是否真的保存成功
+            if not default_storage.exists(saved_path):
+                raise ApiException(
+                    ResponseType.ServerError,
+                    msg="文件保存后验证失败，文件不存在",
+                )
+            
+            # 使用存储后端的url()方法获取完整的访问URL（更可靠）
+            file_url = default_storage.url(saved_path)
+            logger.info(f"✅ 生成的文件URL: {file_url}")
+            
+            # 验证URL格式（应该是OSS URL，不是本地URL）
+            if '127.0.0.1' in file_url or 'localhost' in file_url:
+                logger.warning(f"⚠️  警告：返回的URL是本地URL，不是OSS URL: {file_url}")
+                logger.warning("这可能意味着文件被保存到了本地，而不是OSS")
+            
+            return Response({
+                "code": "00000",
+                "msg": "图片上传成功",
+                "data": {
+                    "url": file_url
+                }
+            })
+        except ApiException:
+            # 重新抛出ApiException
+            raise
+        except Exception as e:
+            raise ApiException(
+                ResponseType.ServerError,
+                msg=f"图片保存失败: {str(e)}",
+            )
     
     @action(methods=["post"], detail=False, url_path="resubmit")
     def checkin_resubmit(self, request):
