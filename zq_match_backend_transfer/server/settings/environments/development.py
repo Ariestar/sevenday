@@ -9,6 +9,7 @@ ALLOWED_HOSTS = [
     "localhost",
     "127.0.0.1",
     "121.40.155.61",
+    "47.99.93.160",
     "match.ziqiang.net.cn",
     "api.match.ziqiang.net.cn",
     "test.match.ziqiang.net.cn",

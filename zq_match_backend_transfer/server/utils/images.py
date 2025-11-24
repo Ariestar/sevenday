@@ -31,7 +31,10 @@ def compress_image(
         width = int((float(image.size[0]) * float(height_percent)))
 
     if width and height:  # 压缩
-        image = image.resize((width, height), Image.ANTIALIAS)
+        # Pillow>=10 移除了 Image.ANTIALIAS，这里兼容新旧版本
+        resample_attr = getattr(Image, "Resampling", Image)
+        resample_filter = getattr(resample_attr, "LANCZOS", Image.LANCZOS)
+        image = image.resize((width, height), resample_filter)
 
     # 保存
     new_file = io.BytesIO()
